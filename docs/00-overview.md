@@ -145,8 +145,8 @@ flowchart BT
 
     CORE["XPUMON Core<br/>• Device Discovery<br/>• Capability Discovery<br/>• Metric Normalization<br/>• Plugin Runtime"]
 
-    NVIDIA["NVIDIA Plugin"]
-    AMD["AMD Plugin"]
+    NVIDIA["NVIDIA Plugin(NVML)"]
+    AMD["AMD Plugin(ROCm Systems)"]
     INTEL["Intel Plugin"]
     ASIC["Future ASIC Plugin"]
 
