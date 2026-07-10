@@ -39,4 +39,4 @@ Detailed design documents are available under the `docs/` directory.
 | `docs/01-architecture.md` | System architecture and component relationships |
 | `docs/02-plugin-api.md` | Plugin interface and data model specification |
 
-For contributors implementing new accelerator plugins, start with **`docs/02-plugin-api.md`**.
+For contributors implementing new accelerator plugins, start with **`docs/01-plugin-api.md`**.
