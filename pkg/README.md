@@ -1,31 +1,188 @@
 # XPUMON Core Package
 
-The `pkg` directory contains the core abstractions shared across XPUMON.
+`pkg` contains the vendor-neutral core components of XPUMON.
 
-Its purpose is to provide vendor-neutral interfaces and common data models that allow hardware-specific plugins to integrate with the monitoring framework without modifying the core agent.
+It defines the common interfaces and data models that every hardware-specific plugin must implement.
 
-## Responsibilities
+---
 
-- Define the common plugin interface
-- Define normalized device and metric models
-- Provide shared types used by all vendor plugins
-- Keep the core independent of vendor-specific SDKs
+# Directory Structure
 
-## Design Principles
-
-- **Vendor-neutral** — no dependency on a specific hardware vendor.
-- **Extensible** — new accelerator vendors can be added by implementing the plugin interface.
-- **Minimal** — only common abstractions belong in this package.
-- **Reusable** — shared across the agent and all plugins.
-
-## Directory Structure
-
-```
-pkg/plugin
-├── capability.go   # Capability definitions
-├── device.go       # Device model
-├── metric.go       # Metric model
-└── plugin.go       # Plugin interface
+```text
+pkg/
+├── plugin/
+│   ├── plugin.go       # Core plugin interface
+│   ├── device.go       # Device model
+│   ├── capability.go   # Capability model
+│   └── metric.go       # Metric model
+│
+├── mock/
+│   ├── mock.go         # Mock plugin implementation
+│   └── mock_test.go    # Mock tests
+│
+└── README.md
 ```
 
-Vendor-specific implementations (e.g. NVIDIA, AMD, Intel) should remain outside this package and implement the interfaces defined here.
+---
+
+# Architecture
+
+```mermaid
+flowchart TB
+
+    subgraph Agent["XPUMON Agent"]
+        Collector["Collector"]
+    end
+
+    subgraph Core["pkg/plugin (Core API)"]
+
+        Plugin["Plugin Interface"]
+
+        Device["Device"]
+
+        Capability["Capability"]
+
+        Metric["Metric"]
+
+    end
+
+    subgraph Mock["pkg/mock"]
+
+        MockPlugin["Mock Plugin"]
+
+    end
+
+    subgraph Future["Future Vendor Plugins"]
+
+        NVIDIA["NVIDIA Plugin"]
+        AMD["AMD Plugin"]
+        Intel["Intel Plugin"]
+        ASIC["Future ASIC Plugin"]
+
+    end
+
+    Collector --> Plugin
+
+    Plugin --> Device
+    Plugin --> Capability
+    Plugin --> Metric
+
+    MockPlugin -.implements.-> Plugin
+
+    NVIDIA -.implements.-> Plugin
+    AMD -.implements.-> Plugin
+    Intel -.implements.-> Plugin
+    ASIC -.implements.-> Plugin
+```
+
+---
+
+# Core Relationship
+
+```mermaid
+classDiagram
+
+class Plugin{
+    <<interface>>
+    +Name()
+    +Discover()
+    +Capabilities()
+    +Collect()
+}
+
+class Device{
+    +ID
+    +Vendor
+    +Model
+    +Type
+}
+
+class Capability{
+    +Name
+}
+
+class Metric{
+    +Name
+    +Value
+    +Unit
+    +Timestamp
+}
+
+Plugin --> Device : discovers
+Plugin --> Capability : reports
+Plugin --> Metric : collects
+```
+
+---
+
+# Runtime Flow
+
+```text
+Collector
+    │
+    ▼
+Plugin.Discover()
+    │
+    ▼
+ Device
+
+    │
+    ▼
+Plugin.Capabilities(deviceID)
+    │
+    ▼
+Capability
+
+    │
+    ▼
+Plugin.Collect(deviceID)
+    │
+    ▼
+ Metric
+```
+
+---
+
+# Responsibilities
+
+## pkg/plugin
+
+Defines the vendor-neutral API.
+
+- Plugin interface
+- Device model
+- Capability model
+- Metric model
+
+This package must never depend on vendor SDKs.
+
+---
+
+## pkg/mock
+
+Reference implementation of `plugin.Plugin`.
+
+Purpose:
+
+- Verify interface behavior
+- Provide unit tests
+- Demonstrate how future plugins should be implemented
+
+---
+
+# Future Extension
+
+Every vendor plugin should implement the same interface.
+
+```text
+plugin.Plugin
+        ▲
+        │
+ ┌──────┼───────────────┐
+ │      │       │       │
+Mock  NVIDIA   AMD    Intel
+                │
+             Future ASIC
+```
+
+This keeps XPUMON vendor-neutral while allowing independent implementations for each hardware vendor.
