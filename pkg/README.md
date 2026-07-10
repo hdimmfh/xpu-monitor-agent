@@ -1,188 +1,42 @@
-# XPUMON Core Package
+# Core Package
 
 `pkg` contains the vendor-neutral core components of XPUMON.
 
-It defines the common interfaces and data models that every hardware-specific plugin must implement.
+It provides the common interfaces and shared data models used by all hardware-specific plugins.
 
----
-
-# Directory Structure
+## Directory Structure
 
 ```text
 pkg/
-├── plugin/
-│   ├── plugin.go       # Core plugin interface
-│   ├── device.go       # Device model
-│   ├── capability.go   # Capability model
-│   └── metric.go       # Metric model
-│
-├── mock/
-│   ├── mock.go         # Mock plugin implementation
-│   └── mock_test.go    # Mock tests
-│
+├── plugin/      # Core plugin interfaces and shared models
+├── mock/        # Reference plugin implementation
+├── collector/   # Metric aggregation layer
 └── README.md
 ```
 
----
+## Package Overview
 
-# Architecture
+| Package | Description |
+|---------|-------------|
+| `plugin` | Defines the vendor-neutral plugin interface and shared telemetry models. |
+| `mock` | Reference implementation of `plugin.Plugin` for testing and development. |
+| `collector` | Discovers devices and aggregates metrics from registered plugins. |
 
-```mermaid
-flowchart TB
+## Design Principles
 
-    subgraph Agent["XPUMON Agent"]
-        Collector["Collector"]
-    end
+- Vendor-neutral core interfaces
+- Extensible plugin architecture
+- Shared telemetry data model
+- No vendor-specific SDK dependencies
 
-    subgraph Core["pkg/plugin (Core API)"]
+## Documentation
 
-        Plugin["Plugin Interface"]
+Detailed design documents are available under the `docs/` directory.
 
-        Device["Device"]
+| Document | Description |
+|----------|-------------|
+| `docs/00-overview.md` | Project overview and goals |
+| `docs/01-architecture.md` | System architecture and component relationships |
+| `docs/02-plugin-api.md` | Plugin interface and data model specification |
 
-        Capability["Capability"]
-
-        Metric["Metric"]
-
-    end
-
-    subgraph Mock["pkg/mock"]
-
-        MockPlugin["Mock Plugin"]
-
-    end
-
-    subgraph Future["Future Vendor Plugins"]
-
-        NVIDIA["NVIDIA Plugin"]
-        AMD["AMD Plugin"]
-        Intel["Intel Plugin"]
-        ASIC["Future ASIC Plugin"]
-
-    end
-
-    Collector --> Plugin
-
-    Plugin --> Device
-    Plugin --> Capability
-    Plugin --> Metric
-
-    MockPlugin -.implements.-> Plugin
-
-    NVIDIA -.implements.-> Plugin
-    AMD -.implements.-> Plugin
-    Intel -.implements.-> Plugin
-    ASIC -.implements.-> Plugin
-```
-
----
-
-# Core Relationship
-
-```mermaid
-classDiagram
-
-class Plugin{
-    <<interface>>
-    +Name()
-    +Discover()
-    +Capabilities()
-    +Collect()
-}
-
-class Device{
-    +ID
-    +Vendor
-    +Model
-    +Type
-}
-
-class Capability{
-    +Name
-}
-
-class Metric{
-    +Name
-    +Value
-    +Unit
-    +Timestamp
-}
-
-Plugin --> Device : discovers
-Plugin --> Capability : reports
-Plugin --> Metric : collects
-```
-
----
-
-# Runtime Flow
-
-```text
-Collector
-    │
-    ▼
-Plugin.Discover()
-    │
-    ▼
- Device
-
-    │
-    ▼
-Plugin.Capabilities(deviceID)
-    │
-    ▼
-Capability
-
-    │
-    ▼
-Plugin.Collect(deviceID)
-    │
-    ▼
- Metric
-```
-
----
-
-# Responsibilities
-
-## pkg/plugin
-
-Defines the vendor-neutral API.
-
-- Plugin interface
-- Device model
-- Capability model
-- Metric model
-
-This package must never depend on vendor SDKs.
-
----
-
-## pkg/mock
-
-Reference implementation of `plugin.Plugin`.
-
-Purpose:
-
-- Verify interface behavior
-- Provide unit tests
-- Demonstrate how future plugins should be implemented
-
----
-
-# Future Extension
-
-Every vendor plugin should implement the same interface.
-
-```text
-plugin.Plugin
-        ▲
-        │
- ┌──────┼───────────────┐
- │      │       │       │
-Mock  NVIDIA   AMD    Intel
-                │
-             Future ASIC
-```
-
-This keeps XPUMON vendor-neutral while allowing independent implementations for each hardware vendor.
+For contributors implementing new accelerator plugins, start with **`docs/02-plugin-api.md`**.
