@@ -21,7 +21,7 @@ Its purpose is to provide vendor-neutral interfaces and common data models that 
 ## Directory Structure
 
 ```
-pkg/
+pkg/plugin
 ├── capability.go   # Capability definitions
 ├── device.go       # Device model
 ├── metric.go       # Metric model
