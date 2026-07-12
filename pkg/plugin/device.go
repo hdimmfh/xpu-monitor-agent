@@ -1,4 +1,3 @@
-// pkg/plugin/device.go
 package plugin
 
 type DeviceType string
