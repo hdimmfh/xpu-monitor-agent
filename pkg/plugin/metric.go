@@ -1,9 +1,9 @@
-// pkg/plugin/metric.go
 package plugin
 
 import "time"
 
 type Metric struct {
+	DeviceID  string
 	Name      string
 	Value     any
 	Unit      string
