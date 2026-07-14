@@ -33,7 +33,7 @@ XPUMON is currently in the early implementation phase.
 * [x] Define shared device, capability, and metric models
 * [x] Implement a mock plugin for core testing
 * [x] Add the initial NVIDIA NVML plugin structure
-* [ ] Validate telemetry collection on NVIDIA hardware
+* [x] Validate telemetry collection on NVIDIA hardware
 * [ ] Complete metric normalization
 * [ ] Add a Prometheus-compatible export path
 * [ ] Add additional vendor plugins
