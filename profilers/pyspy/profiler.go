@@ -19,16 +19,26 @@ type Config struct {
 	BinaryPath string
 }
 
-// Profiler implements the common profiler interface using py-spy.
+// Profiler implements the common profiler interface
+// using py-spy.
 type Profiler struct {
 	binaryPath string
 }
 
 // New creates a py-spy profiler.
 //
-// When BinaryPath is empty, py-spy is resolved from PATH.
-func New(cfg Config) (*Profiler, error) {
-	binaryPath := strings.TrimSpace(cfg.BinaryPath)
+// When BinaryPath is empty, py-spy is resolved
+// from PATH.
+func New(
+	cfg Config,
+) (
+	*Profiler,
+	error,
+) {
+	binaryPath := strings.TrimSpace(
+		cfg.BinaryPath,
+	)
+
 	if binaryPath == "" {
 		binaryPath = "py-spy"
 	}
@@ -43,13 +53,18 @@ func (p *Profiler) Name() string {
 	return "py-spy"
 }
 
-// Available verifies that the py-spy binary can be found and executed.
-func (p *Profiler) Available(ctx context.Context) error {
+// Available verifies that the py-spy binary
+// can be found and executed.
+func (p *Profiler) Available(
+	ctx context.Context,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
-	path, err := exec.LookPath(p.binaryPath)
+	path, err := exec.LookPath(
+		p.binaryPath,
+	)
 	if err != nil {
 		return fmt.Errorf(
 			"find py-spy binary %q: %w",
@@ -58,7 +73,11 @@ func (p *Profiler) Available(ctx context.Context) error {
 		)
 	}
 
-	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd := exec.CommandContext(
+		ctx,
+		path,
+		"--version",
+	)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -66,26 +85,37 @@ func (p *Profiler) Available(ctx context.Context) error {
 			"execute %q --version: %w: %s",
 			path,
 			err,
-			strings.TrimSpace(string(output)),
+			strings.TrimSpace(
+				string(output),
+			),
 		)
 	}
 
 	return nil
 }
 
-// Profile collects one profile and returns the result directly in memory.
+// Profile executes either:
 //
-// py-spy writes the profile payload to stdout through /dev/stdout.
-// Nothing is persisted to a profile or metadata file.
+//	py-spy dump
+//
+// or:
+//
+//	py-spy record
+//
+// according to request.Mode.
 func (p *Profiler) Profile(
 	ctx context.Context,
 	request coreprofiler.Request,
-) (result coreprofiler.Profile, returnErr error) {
+) (
+	result coreprofiler.Profile,
+	returnErr error,
+) {
 	result = coreprofiler.Profile{
 		Profiler:  p.Name(),
+		Mode:      request.Mode,
 		Target:    request.Target,
 		StartedAt: time.Now().UTC(),
-		Format:    request.Format,
+		Format:    resultFormat(request),
 	}
 
 	defer func() {
@@ -96,7 +126,9 @@ func (p *Profiler) Profile(
 		}
 	}()
 
-	if err := validateRequest(request); err != nil {
+	if err := validateRequest(
+		request,
+	); err != nil {
 		return result, err
 	}
 
@@ -104,7 +136,10 @@ func (p *Profiler) Profile(
 		return result, err
 	}
 
-	args := buildRecordArgs(request)
+	args, err := buildArgs(request)
+	if err != nil {
+		return result, err
+	}
 
 	cmd := exec.CommandContext(
 		ctx,
@@ -112,36 +147,50 @@ func (p *Profiler) Profile(
 		args...,
 	)
 
-	// Profile data and diagnostic messages must be separated.
+	// stdout:
+	//   dump output or record payload
 	//
-	// stdout: py-spy profile payload
-	// stderr: py-spy progress and error messages
+	// stderr:
+	//   py-spy diagnostic/progress messages
 	var stderr bytes.Buffer
+
 	cmd.Stderr = &stderr
 
 	output, err := cmd.Output()
 	if err != nil {
 		switch {
-		case errors.Is(ctx.Err(), context.Canceled):
+		case errors.Is(
+			ctx.Err(),
+			context.Canceled,
+		):
 			return result, fmt.Errorf(
-				"py-spy profiling canceled: %w",
+				"py-spy %s canceled: %w",
+				request.Mode,
 				ctx.Err(),
 			)
 
-		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		case errors.Is(
+			ctx.Err(),
+			context.DeadlineExceeded,
+		):
 			return result, fmt.Errorf(
-				"py-spy profiling deadline exceeded: %w",
+				"py-spy %s deadline exceeded: %w",
+				request.Mode,
 				ctx.Err(),
 			)
 		}
 
-		errorOutput := strings.TrimSpace(stderr.String())
+		errorOutput := strings.TrimSpace(
+			stderr.String(),
+		)
+
 		if errorOutput == "" {
 			errorOutput = err.Error()
 		}
 
 		return result, fmt.Errorf(
-			"execute py-spy: %w: %s",
+			"execute py-spy %s: %w: %s",
+			request.Mode,
 			err,
 			errorOutput,
 		)
@@ -152,21 +201,53 @@ func (p *Profiler) Profile(
 	return result, nil
 }
 
-func validateRequest(request coreprofiler.Request) error {
+func validateRequest(
+	request coreprofiler.Request,
+) error {
 	if request.Target.PID <= 0 {
-		return fmt.Errorf("PID must be greater than zero")
+		return fmt.Errorf(
+			"PID must be greater than zero",
+		)
 	}
 
+	switch request.Mode {
+	case coreprofiler.ModeDump:
+		return nil
+
+	case coreprofiler.ModeRecord:
+		return validateRecordRequest(
+			request,
+		)
+
+	default:
+		return fmt.Errorf(
+			"unsupported py-spy mode %q",
+			request.Mode,
+		)
+	}
+}
+
+func validateRecordRequest(
+	request coreprofiler.Request,
+) error {
 	if request.Duration <= 0 {
-		return fmt.Errorf("duration must be greater than zero")
+		return fmt.Errorf(
+			"duration must be greater than zero",
+		)
 	}
 
 	if request.SampleRate <= 0 {
-		return fmt.Errorf("sample rate must be greater than zero")
+		return fmt.Errorf(
+			"sample rate must be greater than zero",
+		)
 	}
 
 	switch request.Format {
-	case "raw", "flamegraph", "speedscope", "chrometrace":
+	case "raw",
+		"flamegraph",
+		"speedscope",
+		"chrometrace":
+
 		return nil
 
 	default:
@@ -177,13 +258,62 @@ func validateRequest(request coreprofiler.Request) error {
 	}
 }
 
+func buildArgs(
+	request coreprofiler.Request,
+) (
+	[]string,
+	error,
+) {
+	switch request.Mode {
+	case coreprofiler.ModeDump:
+		return buildDumpArgs(
+			request,
+		), nil
+
+	case coreprofiler.ModeRecord:
+		return buildRecordArgs(
+			request,
+		), nil
+
+	default:
+		return nil, fmt.Errorf(
+			"unsupported py-spy mode %q",
+			request.Mode,
+		)
+	}
+}
+
+func buildDumpArgs(
+	request coreprofiler.Request,
+) []string {
+	args := []string{
+		"dump",
+		"--pid",
+		strconv.Itoa(
+			request.Target.PID,
+		),
+	}
+
+	if request.Native {
+		args = append(
+			args,
+			"--native",
+		)
+	}
+
+	return args
+}
+
 func buildRecordArgs(
 	request coreprofiler.Request,
 ) []string {
 	// py-spy accepts duration as whole seconds.
 	durationSeconds := int(
-		math.Ceil(request.Duration.Seconds()),
+		math.Ceil(
+			request.Duration.Seconds(),
+		),
 	)
+
 	if durationSeconds < 1 {
 		durationSeconds = 1
 	}
@@ -191,11 +321,17 @@ func buildRecordArgs(
 	args := []string{
 		"record",
 		"--pid",
-		strconv.Itoa(request.Target.PID),
+		strconv.Itoa(
+			request.Target.PID,
+		),
 		"--duration",
-		strconv.Itoa(durationSeconds),
+		strconv.Itoa(
+			durationSeconds,
+		),
 		"--rate",
-		strconv.Itoa(request.SampleRate),
+		strconv.Itoa(
+			request.SampleRate,
+		),
 		"--format",
 		request.Format,
 		"--output",
@@ -203,8 +339,21 @@ func buildRecordArgs(
 	}
 
 	if request.Native {
-		args = append(args, "--native")
+		args = append(
+			args,
+			"--native",
+		)
 	}
 
 	return args
+}
+
+func resultFormat(
+	request coreprofiler.Request,
+) string {
+	if request.Mode == coreprofiler.ModeDump {
+		return "text"
+	}
+
+	return request.Format
 }
