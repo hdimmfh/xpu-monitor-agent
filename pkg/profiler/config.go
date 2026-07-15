@@ -19,12 +19,6 @@ type Config struct {
 	Profiling ProfilingConfig `yaml:"profiling"`
 }
 
-type ProfilingConfig struct {
-	Enabled bool        `yaml:"enabled"`
-	PySpy   PySpyConfig `yaml:"pyspy"`
-	Storage StorageConfig `yaml:"storage"`
-}
-
 type PySpyConfig struct {
 	Binary     string `yaml:"binary"`
 	Mode       string `yaml:"mode"`
