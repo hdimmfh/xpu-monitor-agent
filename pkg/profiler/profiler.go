@@ -1,102 +1,79 @@
 package profiler
 
 import (
-	"context"
-	"time"
+        "context"
+        "time"
 )
 
 type Target struct {
-	PID         int    `json:"pid"`
-	DeviceID    string `json:"device_id,omitempty"`
-	Hostname    string `json:"hostname,omitempty"`
-	Command     string `json:"command,omitempty"`
-	ContainerID string `json:"container_id,omitempty"`
-	JobID       string `json:"job_id,omitempty"`
+        PID int `json:"pid"`
+
+        DeviceID string `json:"device_id,omitempty"`
+
+        Hostname string `json:"hostname,omitempty"`
+
+        Command string `json:"command,omitempty"`
+
+        ContainerID string `json:"container_id,omitempty"`
+
+        JobID string `json:"job_id,omitempty"`
 }
 
 type Request struct {
-	Target Target
+        Target Target
 
-	// Mode determines whether py-spy executes
-	// dump or record.
-	Mode string
+        // Mode determines whether py-spy executes
+        // dump or record.
+        Mode string
 
-	// The fields below are used only by record mode.
-	Duration   time.Duration
-	SampleRate int
-	Format     string
-	Native     bool
-}
+        // The fields below are used only by record mode.
+        Duration time.Duration
 
-// StackSnapshot is a normalized stack snapshot.
-//
-// The py-spy-specific JSON response is converted
-// into this common XPUMON model.
-type StackSnapshot struct {
-	Threads []StackThread `json:"threads"`
-}
+        SampleRate int
 
-type StackThread struct {
-	PID        int          `json:"pid"`
-	ThreadID   uint64       `json:"thread_id"`
-	ThreadName string       `json:"thread_name,omitempty"`
-	OSThreadID uint64       `json:"os_thread_id"`
-	Active     bool         `json:"active"`
-	OwnsGIL    bool         `json:"owns_gil"`
-	Frames     []StackFrame `json:"frames"`
-}
+        Format string
 
-type StackFrame struct {
-	Name          string `json:"name"`
-	Filename      string `json:"filename"`
-	ShortFilename string `json:"short_filename,omitempty"`
-	Module        string `json:"module,omitempty"`
-	Line          int    `json:"line"`
+        Native bool
 }
 
 type Profile struct {
-	Profiler string `json:"profiler"`
-	Mode     string `json:"mode"`
+        Profiler string `json:"profiler"`
 
-	Target Target `json:"target"`
+        Mode string `json:"mode"`
 
-	StartedAt time.Time `json:"started_at"`
-	EndedAt   time.Time `json:"ended_at"`
+        Target Target `json:"target"`
 
-	Format string `json:"format"`
+        StartedAt time.Time `json:"started_at"`
 
-	// Snapshot is populated only by dump mode.
-	Snapshot *StackSnapshot `json:"snapshot,omitempty"`
+        EndedAt time.Time `json:"ended_at"`
 
-	// Data preserves the original profiler payload.
-	//
-	// It is not directly serialized because encoding/json
-	// serializes []byte as Base64.
-	Data []byte `json:"-"`
+        Format string `json:"format"`
 
-	Error string `json:"error,omitempty"`
+        Data []byte `json:"data,omitempty"`
+
+        Error string `json:"error,omitempty"`
 }
 
 func (p Profile) Text() string {
-	return string(p.Data)
+        return string(p.Data)
 }
 
 type Profiler interface {
-	Name() string
+        Name() string
 
-	// Available checks whether the underlying
-	// profiler binary can be executed.
-	Available(
-		ctx context.Context,
-	) error
+        // Available checks whether the underlying
+        // profiler binary can be executed.
+        Available(
+                ctx context.Context,
+        ) error
 
-	// Profile performs either a dump or record
-	// operation according to Request.Mode.
-	Profile(
-		ctx context.Context,
-		request Request,
-	) (
-		Profile,
-		error,
-	)
+        // Profile performs either a dump or record
+        // operation according to Request.Mode.
+        Profile(
+                ctx context.Context,
+                request Request,
+        ) (
+                Profile,
+                error,
+        )
 }
