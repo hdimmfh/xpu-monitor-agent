@@ -1,14 +1,12 @@
 package pyspy
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,35 +14,36 @@ import (
 	coreprofiler "github.com/hdimmfh/xpu-monitor-agent/pkg/profiler"
 )
 
+// Config contains settings required to execute py-spy.
 type Config struct {
 	BinaryPath string
-	OutputDir  string
 }
 
+// Profiler implements the common profiler interface using py-spy.
 type Profiler struct {
 	binaryPath string
-	outputDir  string
 }
 
+// New creates a py-spy profiler.
+//
+// When BinaryPath is empty, py-spy is resolved from PATH.
 func New(cfg Config) (*Profiler, error) {
-	if strings.TrimSpace(cfg.BinaryPath) == "" {
-		cfg.BinaryPath = "py-spy"
-	}
-
-	if strings.TrimSpace(cfg.OutputDir) == "" {
-		cfg.OutputDir = "./profiles"
+	binaryPath := strings.TrimSpace(cfg.BinaryPath)
+	if binaryPath == "" {
+		binaryPath = "py-spy"
 	}
 
 	return &Profiler{
-		binaryPath: cfg.BinaryPath,
-		outputDir:  cfg.OutputDir,
+		binaryPath: binaryPath,
 	}, nil
 }
 
+// Name returns the profiler implementation name.
 func (p *Profiler) Name() string {
 	return "py-spy"
 }
 
+// Available verifies that the py-spy binary can be found and executed.
 func (p *Profiler) Available(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -74,16 +73,18 @@ func (p *Profiler) Available(ctx context.Context) error {
 	return nil
 }
 
+// Profile collects one profile and returns the result directly in memory.
+//
+// py-spy writes the profile payload to stdout through /dev/stdout.
+// Nothing is persisted to a profile or metadata file.
 func (p *Profiler) Profile(
 	ctx context.Context,
 	request coreprofiler.Request,
-) (result coreprofiler.Result, returnErr error) {
-	startedAt := time.Now().UTC()
-
-	result = coreprofiler.Result{
+) (result coreprofiler.Profile, returnErr error) {
+	result = coreprofiler.Profile{
 		Profiler:  p.Name(),
 		Target:    request.Target,
-		StartedAt: startedAt,
+		StartedAt: time.Now().UTC(),
 		Format:    request.Format,
 	}
 
@@ -103,48 +104,50 @@ func (p *Profiler) Profile(
 		return result, err
 	}
 
-	profileDir, err := p.createProfileDirectory(request, startedAt)
-	if err != nil {
-		return result, err
-	}
+	args := buildRecordArgs(request)
 
-	outputPath := filepath.Join(
-		profileDir,
-		"profile."+extensionForFormat(request.Format),
+	cmd := exec.CommandContext(
+		ctx,
+		p.binaryPath,
+		args...,
 	)
 
-	result.OutputPath = outputPath
-	result.MetadataPath = filepath.Join(profileDir, "metadata.json")
+	// Profile data and diagnostic messages must be separated.
+	//
+	// stdout: py-spy profile payload
+	// stderr: py-spy progress and error messages
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
-	args := buildRecordArgs(request, outputPath)
-
-	cmd := exec.CommandContext(ctx, p.binaryPath, args...)
-
-	output, err := cmd.CombinedOutput()
+	output, err := cmd.Output()
 	if err != nil {
-		if errors.Is(ctx.Err(), context.Canceled) {
-			return result, fmt.Errorf("py-spy profiling canceled: %w", ctx.Err())
-		}
+		switch {
+		case errors.Is(ctx.Err(), context.Canceled):
+			return result, fmt.Errorf(
+				"py-spy profiling canceled: %w",
+				ctx.Err(),
+			)
 
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
 			return result, fmt.Errorf(
 				"py-spy profiling deadline exceeded: %w",
 				ctx.Err(),
 			)
 		}
 
+		errorOutput := strings.TrimSpace(stderr.String())
+		if errorOutput == "" {
+			errorOutput = err.Error()
+		}
+
 		return result, fmt.Errorf(
 			"execute py-spy: %w: %s",
 			err,
-			strings.TrimSpace(string(output)),
+			errorOutput,
 		)
 	}
 
-	result.EndedAt = time.Now().UTC()
-
-	if err := writeMetadata(result.MetadataPath, result); err != nil {
-		return result, err
-	}
+	result.Data = output
 
 	return result, nil
 }
@@ -165,28 +168,38 @@ func validateRequest(request coreprofiler.Request) error {
 	switch request.Format {
 	case "raw", "flamegraph", "speedscope", "chrometrace":
 		return nil
+
 	default:
-		return fmt.Errorf("unsupported py-spy format %q", request.Format)
+		return fmt.Errorf(
+			"unsupported py-spy format %q",
+			request.Format,
+		)
 	}
 }
 
 func buildRecordArgs(
 	request coreprofiler.Request,
-	outputPath string,
 ) []string {
-	// py-spy duration is passed in whole seconds.
-	durationSeconds := int(math.Ceil(request.Duration.Seconds()))
+	// py-spy accepts duration as whole seconds.
+	durationSeconds := int(
+		math.Ceil(request.Duration.Seconds()),
+	)
 	if durationSeconds < 1 {
 		durationSeconds = 1
 	}
 
 	args := []string{
 		"record",
-		"--pid", strconv.Itoa(request.Target.PID),
-		"--duration", strconv.Itoa(durationSeconds),
-		"--rate", strconv.Itoa(request.SampleRate),
-		"--format", request.Format,
-		"--output", outputPath,
+		"--pid",
+		strconv.Itoa(request.Target.PID),
+		"--duration",
+		strconv.Itoa(durationSeconds),
+		"--rate",
+		strconv.Itoa(request.SampleRate),
+		"--format",
+		request.Format,
+		"--output",
+		"/dev/stdout",
 	}
 
 	if request.Native {
@@ -194,69 +207,4 @@ func buildRecordArgs(
 	}
 
 	return args
-}
-
-func (p *Profiler) createProfileDirectory(
-	request coreprofiler.Request,
-	startedAt time.Time,
-) (string, error) {
-	dateDirectory := startedAt.Format("2006-01-02")
-	profileName := fmt.Sprintf(
-		"pid-%d-%s",
-		request.Target.PID,
-		startedAt.Format("150405.000000000"),
-	)
-
-	path := filepath.Join(
-		p.outputDir,
-		dateDirectory,
-		profileName,
-	)
-
-	if err := os.MkdirAll(path, 0o750); err != nil {
-		return "", fmt.Errorf(
-			"create profile directory %q: %w",
-			path,
-			err,
-		)
-	}
-
-	return path, nil
-}
-
-func extensionForFormat(format string) string {
-	switch format {
-	case "flamegraph":
-		return "svg"
-	case "speedscope":
-		return "json"
-	case "chrometrace":
-		return "json"
-	case "raw":
-		return "txt"
-	default:
-		return "out"
-	}
-}
-
-func writeMetadata(
-	path string,
-	result coreprofiler.Result,
-) error {
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal profile metadata: %w", err)
-	}
-
-	data = append(data, '\n')
-
-	if err := os.WriteFile(path, data, 0o640); err != nil {
-		return fmt.Errorf(
-			"write profile metadata %q: %w",
-			path,
-			err,
-		)
-	}
-
-	return nil
 }
