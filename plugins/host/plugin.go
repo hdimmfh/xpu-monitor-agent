@@ -42,7 +42,7 @@ func (p *Plugin) Discover(
 			ID:     hostDeviceID,
 			Vendor: vendorName,
 			Model:  hostname,
-			Type:   plugin.DeviceTypeXPU,
+			Type:   plugin.DeviceTypeHost,
 		},
 	}, nil
 }
