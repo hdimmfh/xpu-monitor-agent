@@ -314,6 +314,7 @@ func runProfile(
 		*formatOverride,
 		*nativeOverride,
 	)
+}
 
 func buildProfileRequest(
 	cfg coreprofiler.Config,
