@@ -10,6 +10,58 @@ import (
 	"github.com/hdimmfh/xpu-monitor-agent/pkg/plugin"
 )
 
+func collectMemory(
+	ctx context.Context,
+	device nvml.Device,
+	deviceID string,
+	timestamp time.Time,
+	metrics *[]plugin.Metric,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	memory, ret := device.GetMemoryInfo()
+
+	switch ret {
+	case nvml.SUCCESS:
+		*metrics = append(
+			*metrics,
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "memory_used",
+				Value:     memory.Used,
+				Unit:      "byte",
+				Timestamp: timestamp,
+			},
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "memory_total",
+				Value:     memory.Total,
+				Unit:      "byte",
+				Timestamp: timestamp,
+			},
+		)
+
+		return nil
+
+	case nvml.ERROR_NOT_SUPPORTED:
+		return collectUnifiedSystemMemory(
+			ctx,
+			deviceID,
+			timestamp,
+			metrics,
+		)
+
+	default:
+		return fmt.Errorf(
+			"get memory info for NVIDIA device %q: %s",
+			deviceID,
+			nvml.ErrorString(ret),
+		)
+	}
+}
+
 func collectUnifiedSystemMemory(
 	ctx context.Context,
 	deviceID string,
