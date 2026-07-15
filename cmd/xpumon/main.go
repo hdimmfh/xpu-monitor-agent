@@ -26,12 +26,18 @@ func main() {
 	)
 	defer stop()
 
-	if err := run(ctx, os.Args[1:]); err != nil {
+	if err := run(
+		ctx,
+		os.Args[1:],
+	); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(ctx context.Context, args []string) error {
+func run(
+	ctx context.Context,
+	args []string,
+) error {
 	if len(args) == 0 {
 		return runCollect(ctx)
 	}
@@ -41,29 +47,43 @@ func run(ctx context.Context, args []string) error {
 		return runCollect(ctx)
 
 	case "profile":
-		return runProfile(ctx, args[1:])
+		return runProfile(
+			ctx,
+			args[1:],
+		)
 
 	case "help", "-h", "--help":
 		printUsage()
+
 		return nil
 
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf(
+			"unknown command %q",
+			args[0],
+		)
 	}
 }
 
-// runCollect collects host and NVIDIA device metrics.
-//
-// The existing metric output format is intentionally preserved.
-func runCollect(ctx context.Context) error {
+// runCollect collects host and NVIDIA
+// device metrics.
+func runCollect(
+	ctx context.Context,
+) error {
 	nvidiaPlugin, err := nvidia.New()
 	if err != nil {
-		return fmt.Errorf("create NVIDIA plugin: %w", err)
+		return fmt.Errorf(
+			"create NVIDIA plugin: %w",
+			err,
+		)
 	}
 
 	defer func() {
 		if err := nvidiaPlugin.Close(); err != nil {
-			log.Printf("close NVIDIA plugin: %v", err)
+			log.Printf(
+				"close NVIDIA plugin: %v",
+				err,
+			)
 		}
 	}()
 
@@ -76,7 +96,10 @@ func runCollect(ctx context.Context) error {
 
 	metrics, err := c.CollectAll(ctx)
 	if err != nil {
-		return fmt.Errorf("collect metrics: %w", err)
+		return fmt.Errorf(
+			"collect metrics: %w",
+			err,
+		)
 	}
 
 	for _, metric := range metrics {
@@ -92,11 +115,12 @@ func runCollect(ctx context.Context) error {
 	return nil
 }
 
-// runProfile performs one py-spy profiling operation.
-//
-// The profile is returned directly in memory through Profile.Data.
-// No profile or metadata file is created.
-func runProfile(ctx context.Context, args []string) error {
+// runProfile performs either a py-spy dump
+// or record operation according to the YAML mode.
+func runProfile(
+	ctx context.Context,
+	args []string,
+) error {
 	flags := flag.NewFlagSet(
 		"profile",
 		flag.ContinueOnError,
@@ -104,7 +128,7 @@ func runProfile(ctx context.Context, args []string) error {
 
 	configPath := flags.String(
 		"config",
-		"./configs/xpumon.yaml",
+		"./configs/pyspy-dump.yaml",
 		"path to XPUMON configuration file",
 	)
 
@@ -141,19 +165,19 @@ func runProfile(ctx context.Context, args []string) error {
 	durationOverride := flags.Duration(
 		"duration",
 		0,
-		"profiling duration override, for example 10s",
+		"record duration override",
 	)
 
 	rateOverride := flags.Int(
 		"rate",
 		0,
-		"sampling rate override",
+		"record sampling rate override",
 	)
 
 	formatOverride := flags.String(
 		"format",
 		"",
-		"output format override: raw, flamegraph, speedscope, or chrometrace",
+		"record output format override",
 	)
 
 	nativeOverride := flags.Bool(
@@ -165,7 +189,7 @@ func runProfile(ctx context.Context, args []string) error {
 	withMetrics := flags.Bool(
 		"with-metrics",
 		false,
-		"collect host and device metrics before profiling",
+		"collect metrics before profiling",
 	)
 
 	if err := flags.Parse(args); err != nil {
@@ -173,49 +197,51 @@ func runProfile(ctx context.Context, args []string) error {
 	}
 
 	if *pid <= 0 {
-		return errors.New("--pid must be greater than zero")
+		return errors.New(
+			"--pid must be greater than zero",
+		)
 	}
 
-	cfg, err := coreprofiler.LoadConfig(*configPath)
+	cfg, err := coreprofiler.LoadConfig(
+		*configPath,
+	)
 	if err != nil {
 		return err
 	}
 
 	if !cfg.Profiling.Enabled {
-		return errors.New("profiling is disabled in configuration")
+		return errors.New(
+			"profiling is disabled in configuration",
+		)
 	}
 
-	duration, err := cfg.Duration()
+	request, err := buildProfileRequest(
+		cfg,
+		*pid,
+		*deviceID,
+		*containerID,
+		*jobID,
+		*command,
+		*durationOverride,
+		*rateOverride,
+		*formatOverride,
+		*nativeOverride,
+	)
 	if err != nil {
-		return fmt.Errorf("parse profiling duration: %w", err)
+		return err
 	}
 
-	if *durationOverride > 0 {
-		duration = *durationOverride
-	}
-
-	sampleRate := cfg.Profiling.PySpy.SampleRate
-	if *rateOverride > 0 {
-		sampleRate = *rateOverride
-	}
-
-	format := cfg.Profiling.PySpy.Format
-	if *formatOverride != "" {
-		format = *formatOverride
-	}
-
-	native := cfg.Profiling.PySpy.Native || *nativeOverride
-
-	hostname, err := os.Hostname()
+	p, err := pyspy.New(
+		pyspy.Config{
+			BinaryPath:
+				cfg.Profiling.PySpy.Binary,
+		},
+	)
 	if err != nil {
-		return fmt.Errorf("get hostname: %w", err)
-	}
-
-	p, err := pyspy.New(pyspy.Config{
-		BinaryPath: cfg.Profiling.PySpy.Binary,
-	})
-	if err != nil {
-		return fmt.Errorf("create py-spy profiler: %w", err)
+		return fmt.Errorf(
+			"create py-spy profiler: %w",
+			err,
+		)
 	}
 
 	if *withMetrics {
@@ -228,20 +254,7 @@ func runProfile(ctx context.Context, args []string) error {
 
 	result, err := p.Profile(
 		ctx,
-		coreprofiler.Request{
-			Target: coreprofiler.Target{
-				PID:         *pid,
-				DeviceID:    *deviceID,
-				Hostname:    hostname,
-				Command:     *command,
-				ContainerID: *containerID,
-				JobID:       *jobID,
-			},
-			Duration:   duration,
-			SampleRate: sampleRate,
-			Format:     format,
-			Native:     native,
-		},
+		request,
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -256,14 +269,101 @@ func runProfile(ctx context.Context, args []string) error {
 	return nil
 }
 
-func printProfile(profile coreprofiler.Profile) {
+func buildProfileRequest(
+	cfg coreprofiler.Config,
+	pid int,
+	deviceID string,
+	containerID string,
+	jobID string,
+	command string,
+	durationOverride time.Duration,
+	rateOverride int,
+	formatOverride string,
+	nativeOverride bool,
+) (
+	coreprofiler.Request,
+	error,
+) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return coreprofiler.Request{},
+			fmt.Errorf(
+				"get hostname: %w",
+				err,
+			)
+	}
+
+	request := coreprofiler.Request{
+		Mode: cfg.Profiling.PySpy.Mode,
+
+		Target: coreprofiler.Target{
+			PID:         pid,
+			DeviceID:    deviceID,
+			Hostname:    hostname,
+			Command:     command,
+			ContainerID: containerID,
+			JobID:       jobID,
+		},
+
+		Native:
+			cfg.Profiling.PySpy.Native ||
+				nativeOverride,
+	}
+
+	if request.Mode ==
+		coreprofiler.ModeDump {
+		return request, nil
+	}
+
+	duration, err := cfg.Duration()
+	if err != nil {
+		return coreprofiler.Request{},
+			fmt.Errorf(
+				"parse profiling duration: %w",
+				err,
+			)
+	}
+
+	if durationOverride > 0 {
+		duration = durationOverride
+	}
+
+	sampleRate :=
+		cfg.Profiling.PySpy.SampleRate
+
+	if rateOverride > 0 {
+		sampleRate = rateOverride
+	}
+
+	format :=
+		cfg.Profiling.PySpy.Format
+
+	if formatOverride != "" {
+		format = formatOverride
+	}
+
+	request.Duration = duration
+	request.SampleRate = sampleRate
+	request.Format = format
+
+	return request, nil
+}
+
+func printProfile(
+	profile coreprofiler.Profile,
+) {
 	fmt.Printf(
-		"profile=%s pid=%d format=%s started_at=%s ended_at=%s",
+		"profile=%s mode=%s pid=%d format=%s started_at=%s ended_at=%s",
 		profile.Profiler,
+		profile.Mode,
 		profile.Target.PID,
 		profile.Format,
-		profile.StartedAt.Format(time.RFC3339Nano),
-		profile.EndedAt.Format(time.RFC3339Nano),
+		profile.StartedAt.Format(
+			time.RFC3339Nano,
+		),
+		profile.EndedAt.Format(
+			time.RFC3339Nano,
+		),
 	)
 
 	if profile.Target.Hostname != "" {
@@ -302,87 +402,111 @@ func printProfile(profile coreprofiler.Profile) {
 	}
 
 	fmt.Println()
-	fmt.Println("profile_data_begin")
 
-	fmt.Print(profile.Text())
+	fmt.Println(
+		"profile_data_begin",
+	)
+
+	fmt.Print(
+		profile.Text(),
+	)
 
 	if len(profile.Data) > 0 &&
-		profile.Data[len(profile.Data)-1] != '\n' {
+		profile.Data[
+			len(profile.Data)-1
+		] != '\n' {
 		fmt.Println()
 	}
 
-	fmt.Println("profile_data_end")
+	fmt.Println(
+		"profile_data_end",
+	)
 }
 
 func printUsage() {
-	fmt.Print(`XPUMON
+	fmt.Print(
+		`XPUMON
 
 Usage:
+
   xpumon
   xpumon collect
-  xpumon profile --pid <PID> [options]
 
-Commands:
-  collect
-      Collect host and accelerator metrics.
+  xpumon profile \
+      --config <config.yaml> \
+      --pid <PID>
 
-  profile
-      Collect one py-spy profile and return it as text.
-      No profile file is created.
+YAML modes:
 
-Profile options:
+  mode: dump
+
+      Execute:
+
+          py-spy dump --pid <PID>
+
+      Captures one current stack snapshot.
+
+  mode: record
+
+      Execute:
+
+          py-spy record \
+              --pid <PID> \
+              --duration <seconds> \
+              --rate <rate> \
+              --format <format>
+
+      Samples stacks during the configured duration.
+
+Options:
+
   --config <path>
-      Configuration file path.
-      Default: ./configs/xpumon.yaml
+
+      YAML configuration file.
 
   --pid <PID>
-      Target Python process ID. Required.
+
+      Target Python process ID.
 
   --duration <duration>
-      Override the YAML profiling duration.
-      Example: 10s
 
-  --rate <number>
-      Override the YAML sampling rate.
+      Override record duration.
+
+      Ignored in dump mode.
+
+  --rate <rate>
+
+      Override record sampling rate.
+
+      Ignored in dump mode.
 
   --format <format>
-      Override the YAML output format.
-      Supported: raw, flamegraph, speedscope, chrometrace
+
+      Override record output format.
+
+      Ignored in dump mode.
 
   --native
+
       Include native stack frames.
 
   --with-metrics
-      Print existing host and device metrics before the profile.
 
-  --device-id <ID>
-      Device ID associated with the process.
-
-  --container-id <ID>
-      Container ID associated with the process.
-
-  --job-id <ID>
-      Job ID associated with the process.
-
-  --command <command>
-      Command associated with the process.
+      Collect host and accelerator
+      metrics before profiling.
 
 Examples:
-  xpumon
-  xpumon collect
 
-  xpumon profile \
-    --pid 124243
+  go run ./cmd/xpumon \
+      profile \
+      --config ./configs/pyspy-dump.yaml \
+      --pid 1234
 
-  xpumon profile \
-    --pid 124243 \
-    --duration 10s \
-    --rate 20 \
-    --format raw
+  go run ./cmd/xpumon \
+      profile \
+      --config ./configs/pyspy-record.yaml \
+      --pid 1234
 
-  xpumon profile \
-    --pid 124243 \
-    --with-metrics \
-    --device-id GPU-8994d77e-21c7-99de-5b47-d8180c8d8623
-`)
+`,
+	)
 }
