@@ -204,7 +204,7 @@ func runProfile(ctx context.Context, args []string) error {
 }
 
 func printUsage() {
-	fmt.Println(`XPUMON
+	fmt.Print(`XPUMON
 
 Usage:
   xpumon collect
