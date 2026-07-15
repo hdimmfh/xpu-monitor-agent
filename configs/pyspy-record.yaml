@@ -3,6 +3,7 @@ profiling:
 
   pyspy:
     binary: py-spy
+    mode: record
     duration: 10s
     sample_rate: 20
     format: raw
