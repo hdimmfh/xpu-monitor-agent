@@ -153,6 +153,7 @@ Configuration supports:
 
 - [Project Overview](docs/00-overview.md)
 - [Plugin API](docs/01-plugin-api.md)
+- [Plugin API](docs/02-profiling.md)
 
 More documentation will be added as the project evolves.
 
