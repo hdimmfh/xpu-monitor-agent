@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hdimmfh/xpu-monitor-agent/pkg/collector"
+	"github.com/hdimmfh/xpu-monitor-agent/pkg/plugin"
 	coreprofiler "github.com/hdimmfh/xpu-monitor-agent/pkg/profiler"
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/host"
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/nvidia"
@@ -70,38 +71,44 @@ func run(
 func runCollect(
 	ctx context.Context,
 ) error {
+	// The host plugin is always available and registered first.
+	plugins := []plugin.Plugin{
+		host.New(),
+	}
+
+	// NVIDIA is optional.
+	//
+	// If NVML is unavailable, continue collecting host metrics.
 	nvidiaPlugin, err := nvidia.New()
 	if err != nil {
-		return fmt.Errorf(
-			"create NVIDIA plugin: %w",
+		log.Printf(
+			"NVIDIA plugin unavailable; continuing with host metrics: %v",
 			err,
 		)
+	} else {
+		plugins = append(
+			plugins,
+			nvidiaPlugin,
+		)
+
+		defer func() {
+			if err := nvidiaPlugin.Close(); err != nil {
+				log.Printf(
+					"close NVIDIA plugin: %v",
+					err,
+				)
+			}
+		}()
 	}
-
-	defer func() {
-		if err := nvidiaPlugin.Close(); err != nil {
-			log.Printf(
-				"close NVIDIA plugin: %v",
-				err,
-			)
-		}
-	}()
-
-	hostPlugin := host.New()
 
 	c := collector.New(
-		hostPlugin,
-		nvidiaPlugin,
+		plugins...,
 	)
 
-	metrics, err := c.CollectAll(ctx)
-	if err != nil {
-		return fmt.Errorf(
-			"collect metrics: %w",
-			err,
-		)
-	}
+	metrics, collectErr := c.CollectAll(ctx)
 
+	// Print successfully collected metrics even if another
+	// plugin failed.
 	for _, metric := range metrics {
 		fmt.Printf(
 			"device=%s metric=%s value=%v unit=%s\n",
@@ -109,6 +116,24 @@ func runCollect(
 			metric.Name,
 			metric.Value,
 			metric.Unit,
+		)
+	}
+
+	if collectErr != nil {
+		// No plugin produced metrics.
+		if len(metrics) == 0 {
+			return fmt.Errorf(
+				"collect metrics: %w",
+				collectErr,
+			)
+		}
+
+		// At least one plugin succeeded.
+		//
+		// Keep running and report the failed plugin as a warning.
+		log.Printf(
+			"partial metric collection failure: %v",
+			collectErr,
 		)
 	}
 
