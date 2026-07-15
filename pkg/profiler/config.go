@@ -210,3 +210,39 @@ func (c Config) Duration() (
 		c.Profiling.PySpy.Duration,
 	)
 }
+
+func validateDiscoveryConfig(
+	cfg DiscoveryConfig,
+) error {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if strings.TrimSpace(cfg.ProcRoot) == "" {
+		return fmt.Errorf(
+			"profiling.discovery.proc_root must not be empty",
+		)
+	}
+
+	for _, pattern := range cfg.Exclude.CommandRegex {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf(
+				"invalid profiling.discovery.exclude.command_regex %q: %w",
+				pattern,
+				err,
+			)
+		}
+	}
+
+	for _, pattern := range cfg.Exclude.ExecutableRegex {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf(
+				"invalid profiling.discovery.exclude.executable_regex %q: %w",
+				pattern,
+				err,
+			)
+		}
+	}
+
+	return nil
+}
