@@ -13,8 +13,8 @@ const (
 )
 
 type Device struct {
-	ID     string
-	Vendor string
-	Model  string
-	Type   DeviceType
+	ID     string     `json:"id"`
+	Vendor string     `json:"vendor"`
+	Model  string     `json:"model"`
+	Type   DeviceType `json:"type"`
 }
