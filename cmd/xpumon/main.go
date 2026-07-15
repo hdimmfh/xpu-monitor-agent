@@ -17,6 +17,7 @@ import (
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/host"
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/nvidia"
 	"github.com/hdimmfh/xpu-monitor-agent/profilers/pyspy"
+	"github.com/hdimmfh/xpu-monitor-agent/pkg/process"
 )
 
 func main() {
