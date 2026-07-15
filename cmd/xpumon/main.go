@@ -17,6 +17,7 @@ import (
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/host"
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/nvidia"
 	"github.com/hdimmfh/xpu-monitor-agent/profilers/pyspy"
+	"github.com/hdimmfh/xpu-monitor-agent/pkg/process"
 )
 
 func main() {
@@ -160,7 +161,7 @@ func runProfile(
 	pid := flags.Int(
 		"pid",
 		0,
-		"target Python process ID",
+		"optional target Python process ID; omit to discover all Python processes",
 	)
 
 	deviceID := flags.String(
@@ -221,9 +222,9 @@ func runProfile(
 		return err
 	}
 
-	if *pid <= 0 {
-		return errors.New(
-			"--pid must be greater than zero",
+	if *pid < 0 {
+		return fmt.Errorf(
+			"--pid must not be negative",
 		)
 	}
 
@@ -238,22 +239,6 @@ func runProfile(
 		return errors.New(
 			"profiling is disabled in configuration",
 		)
-	}
-
-	request, err := buildProfileRequest(
-		cfg,
-		*pid,
-		*deviceID,
-		*containerID,
-		*jobID,
-		*command,
-		*durationOverride,
-		*rateOverride,
-		*formatOverride,
-		*nativeOverride,
-	)
-	if err != nil {
-		return err
 	}
 
 	p, err := pyspy.New(
@@ -273,25 +258,46 @@ func runProfile(
 		if err := runCollect(ctx); err != nil {
 			return err
 		}
-
+	
 		fmt.Println()
 	}
-
-	result, err := p.Profile(
-		ctx,
-		request,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"profile PID %d: %w",
-			*pid,
-			err,
+	
+	if *pid > 0 {
+		return profileSingleProcess(
+			ctx,
+			p,
+			cfg,
+			process.Process{
+				PID:     *pid,
+				Command: *command,
+			},
+			*deviceID,
+			*containerID,
+			*jobID,
+			*durationOverride,
+			*rateOverride,
+			*formatOverride,
+			*nativeOverride,
 		)
 	}
-
-	printProfile(result)
-
-	return nil
+	
+	if !cfg.Profiling.Discovery.Enabled {
+		return fmt.Errorf(
+			"--pid is required when profiling.discovery.enabled is false",
+		)
+	}
+	
+	return profileDiscoveredProcesses(
+		ctx,
+		p,
+		cfg,
+		*deviceID,
+		*jobID,
+		*durationOverride,
+		*rateOverride,
+		*formatOverride,
+		*nativeOverride,
+	)
 }
 
 func buildProfileRequest(
@@ -377,52 +383,64 @@ func buildProfileRequest(
 func printProfile(
 	profile coreprofiler.Profile,
 ) {
+	elapsed := profile.EndedAt.Sub(profile.StartedAt)
+
+	fmt.Println("================================================================================")
+	fmt.Println("PY-SPY PROFILE")
+	fmt.Println("================================================================================")
+
+	fmt.Printf("Profiler   : %s\n", profile.Profiler)
+	fmt.Printf("PID        : %d\n", profile.Target.PID)
+	fmt.Printf("Format     : %s\n", profile.Format)
 	fmt.Printf(
-		"profile=%s pid=%d format=%s started_at=%s ended_at=%s",
-		profile.Profiler,
-		profile.Target.PID,
-		profile.Format,
-		profile.StartedAt.Format(time.RFC3339Nano),
-		profile.EndedAt.Format(time.RFC3339Nano),
+		"Started    : %s\n",
+		profile.StartedAt.UTC().Format("2006-01-02 15:04:05.000 MST"),
+	)
+	fmt.Printf(
+		"Ended      : %s\n",
+		profile.EndedAt.UTC().Format("2006-01-02 15:04:05.000 MST"),
+	)
+	fmt.Printf(
+		"Elapsed    : %s\n",
+		elapsed.Round(time.Microsecond),
 	)
 
 	if profile.Target.Hostname != "" {
 		fmt.Printf(
-			" hostname=%q",
+			"Hostname   : %s\n",
 			profile.Target.Hostname,
 		)
 	}
 
 	if profile.Target.DeviceID != "" {
 		fmt.Printf(
-			" device=%q",
+			"Device     : %s\n",
 			profile.Target.DeviceID,
 		)
 	}
 
 	if profile.Target.ContainerID != "" {
 		fmt.Printf(
-			" container_id=%q",
+			"Container  : %s\n",
 			profile.Target.ContainerID,
 		)
 	}
 
 	if profile.Target.JobID != "" {
 		fmt.Printf(
-			" job_id=%q",
+			"Job ID     : %s\n",
 			profile.Target.JobID,
 		)
 	}
 
 	if profile.Target.Command != "" {
 		fmt.Printf(
-			" command=%q",
+			"Command    : %s\n",
 			profile.Target.Command,
 		)
 	}
 
-	fmt.Println()
-	fmt.Println("profile_data_begin")
+	fmt.Println("--------------------------------------------------------------------------------")
 
 	fmt.Print(
 		profile.Text(),
@@ -433,7 +451,8 @@ func printProfile(
 		fmt.Println()
 	}
 
-	fmt.Println("profile_data_end")
+	fmt.Println("================================================================================")
+	fmt.Println()
 }
 
 func printUsage() {
@@ -522,4 +541,154 @@ Examples:
 
 `,
 	)
+}
+
+func profileDiscoveredProcesses(
+	ctx context.Context,
+	p coreprofiler.Profiler,
+	cfg coreprofiler.Config,
+	deviceID string,
+	jobID string,
+	durationOverride time.Duration,
+	rateOverride int,
+	formatOverride string,
+	nativeOverride bool,
+) error {
+	processes, err := process.DiscoverPython(
+		cfg.Profiling.Discovery.ProcRoot,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"discover Python processes: %w",
+			err,
+		)
+	}
+
+	filter, err := process.NewFilter(
+		cfg.Profiling.Discovery.Exclude,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create process filter: %w",
+			err,
+		)
+	}
+
+	profiledCount := 0
+	excludedCount := 0
+	failedCount := 0
+
+	for _, targetProcess := range processes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		excluded, reason := filter.Excluded(
+			targetProcess,
+		)
+		if excluded {
+			excludedCount++
+
+			log.Printf(
+				"skip Python process pid=%d command=%q reason=%s",
+				targetProcess.PID,
+				targetProcess.Command,
+				reason,
+			)
+
+			continue
+		}
+
+		err := profileSingleProcess(
+			ctx,
+			p,
+			cfg,
+			targetProcess,
+			deviceID,
+			"",
+			jobID,
+			durationOverride,
+			rateOverride,
+			formatOverride,
+			nativeOverride,
+		)
+		if err != nil {
+			failedCount++
+
+			log.Printf(
+				"profile Python process pid=%d command=%q: %v",
+				targetProcess.PID,
+				targetProcess.Command,
+				err,
+			)
+
+			continue
+		}
+
+		profiledCount++
+	}
+
+	log.Printf(
+		"Python profiling complete discovered=%d profiled=%d excluded=%d failed=%d",
+		len(processes),
+		profiledCount,
+		excludedCount,
+		failedCount,
+	)
+
+	if profiledCount == 0 && failedCount > 0 {
+		return fmt.Errorf(
+			"all selected Python processes failed profiling",
+		)
+	}
+
+	return nil
+}
+
+func profileSingleProcess(
+	ctx context.Context,
+	p coreprofiler.Profiler,
+	cfg coreprofiler.Config,
+	targetProcess process.Process,
+	deviceID string,
+	containerID string,
+	jobID string,
+	durationOverride time.Duration,
+	rateOverride int,
+	formatOverride string,
+	nativeOverride bool,
+) error {
+	request, err := buildProfileRequest(
+		cfg,
+		targetProcess.PID,
+		deviceID,
+		containerID,
+		jobID,
+		targetProcess.Command,
+		durationOverride,
+		rateOverride,
+		formatOverride,
+		nativeOverride,
+	)
+	if err != nil {
+		return err
+	}
+
+	result, err := p.Profile(
+		ctx,
+		request,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"profile PID %d: %w",
+			targetProcess.PID,
+			err,
+		)
+	}
+
+	printProfile(result)
+
+	fmt.Println()
+
+	return nil
 }
