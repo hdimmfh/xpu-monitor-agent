@@ -1,534 +1,336 @@
 package pyspy
 
 import (
-	"context"
-	"errors"
-	"os"
-	"path/filepath"
-	"reflect"
-	"runtime"
-	"strings"
+	"encoding/json"
 	"testing"
-	"time"
 
 	coreprofiler "github.com/hdimmfh/xpu-monitor-agent/pkg/profiler"
 )
 
-func TestNewUsesDefaultBinaryPath(
+func TestParseDump(
 	t *testing.T,
 ) {
-	p, err := New(Config{})
-	if err != nil {
-		t.Fatalf(
-			"New() error = %v",
-			err,
-		)
-	}
+	const output = `Process 206450: python torch_test.py
+Python v3.12.3 (/usr/bin/python3.12)
 
-	if p.binaryPath != "py-spy" {
-		t.Fatalf(
-			"binaryPath = %q, want %q",
-			p.binaryPath,
-			"py-spy",
-		)
-	}
-}
+Thread 206450 (active): "MainThread"
+    synchronize (torch/cuda/__init__.py:1219)
+    <module> (torch_test.py:28)
+`
 
-func TestName(
-	t *testing.T,
-) {
-	p, err := New(Config{})
-	if err != nil {
-		t.Fatalf(
-			"New() error = %v",
-			err,
-		)
-	}
-
-	if got, want :=
-		p.Name(),
-		"py-spy";
-		got != want {
-
-		t.Fatalf(
-			"Name() = %q, want %q",
-			got,
-			want,
-		)
-	}
-}
-
-func TestBuildDumpArgs(
-	t *testing.T,
-) {
-	request := coreprofiler.Request{
-		Mode: coreprofiler.ModeDump,
-
-		Target: coreprofiler.Target{
-			PID: 1234,
-		},
-
-		Native: true,
-	}
-
-	got := buildDumpArgs(request)
-
-	want := []string{
-		"dump",
-		"--pid",
-		"1234",
-		"--native",
-	}
-
-	if !reflect.DeepEqual(
-		got,
-		want,
-	) {
-		t.Fatalf(
-			"buildDumpArgs() = %#v, want %#v",
-			got,
-			want,
-		)
-	}
-}
-
-func TestBuildRecordArgs(
-	t *testing.T,
-) {
-	request := validRecordRequest()
-
-	request.Native = true
-
-	got := buildRecordArgs(
-		request,
+	got, err := parseDump(
+		[]byte(output),
 	)
-
-	want := []string{
-		"record",
-		"--pid",
-		"1234",
-		"--duration",
-		"10",
-		"--rate",
-		"20",
-		"--format",
-		"raw",
-		"--output",
-		"/dev/stdout",
-		"--native",
-	}
-
-	if !reflect.DeepEqual(
-		got,
-		want,
-	) {
+	if err != nil {
 		t.Fatalf(
-			"buildRecordArgs() = %#v, want %#v",
-			got,
-			want,
-		)
-	}
-}
-
-func TestValidateDumpRequest(
-	t *testing.T,
-) {
-	request := validDumpRequest()
-
-	if err := validateRequest(
-		request,
-	); err != nil {
-		t.Fatalf(
-			"validateRequest() error = %v",
+			"parseDump() error = %v",
 			err,
 		)
 	}
+
+	if got.ProcessID != 206450 {
+		t.Fatalf(
+			"ProcessID = %d, want 206450",
+			got.ProcessID,
+		)
+	}
+
+	if got.Command != "python torch_test.py" {
+		t.Fatalf(
+			"Command = %q, want %q",
+			got.Command,
+			"python torch_test.py",
+		)
+	}
+
+	if got.PythonVersion != "v3.12.3" {
+		t.Fatalf(
+			"PythonVersion = %q, want %q",
+			got.PythonVersion,
+			"v3.12.3",
+		)
+	}
+
+	if got.PythonExecutable != "/usr/bin/python3.12" {
+		t.Fatalf(
+			"PythonExecutable = %q, want %q",
+			got.PythonExecutable,
+			"/usr/bin/python3.12",
+		)
+	}
+
+	if len(got.Threads) != 1 {
+		t.Fatalf(
+			"len(Threads) = %d, want 1",
+			len(got.Threads),
+		)
+	}
+
+	thread := got.Threads[0]
+
+	if thread.ID != "206450" {
+		t.Fatalf(
+			"Thread ID = %q, want %q",
+			thread.ID,
+			"206450",
+		)
+	}
+
+	if thread.State != "active" {
+		t.Fatalf(
+			"Thread State = %q, want %q",
+			thread.State,
+			"active",
+		)
+	}
+
+	if thread.Name != "MainThread" {
+		t.Fatalf(
+			"Thread Name = %q, want %q",
+			thread.Name,
+			"MainThread",
+		)
+	}
+
+	if len(thread.Frames) != 2 {
+		t.Fatalf(
+			"len(Frames) = %d, want 2",
+			len(thread.Frames),
+		)
+	}
+
+	firstFrame := thread.Frames[0]
+
+	if firstFrame.Function != "synchronize" {
+		t.Fatalf(
+			"Function = %q, want %q",
+			firstFrame.Function,
+			"synchronize",
+		)
+	}
+
+	if firstFrame.File != "torch/cuda/__init__.py" {
+		t.Fatalf(
+			"File = %q, want %q",
+			firstFrame.File,
+			"torch/cuda/__init__.py",
+		)
+	}
+
+	if firstFrame.Line != 1219 {
+		t.Fatalf(
+			"Line = %d, want 1219",
+			firstFrame.Line,
+		)
+	}
 }
 
-func TestDumpDoesNotRequireRecordFields(
+func TestParseDumpMultipleThreads(
 	t *testing.T,
 ) {
-	request := validDumpRequest()
+	const output = `Process 1000: python train.py
+Python v3.12.3 (/usr/bin/python3)
 
-	request.Duration = 0
-	request.SampleRate = 0
-	request.Format = ""
+Thread 1000 (active): "MainThread"
+    train (train.py:40)
 
-	if err := validateRequest(
-		request,
-	); err != nil {
+Thread 1001 (idle): "worker"
+    wait (threading.py:331)
+`
+
+	got, err := parseDump(
+		[]byte(output),
+	)
+	if err != nil {
 		t.Fatalf(
-			"validateRequest() error = %v",
+			"parseDump() error = %v",
 			err,
 		)
 	}
-}
 
-func TestValidateRecordRequest(
-	t *testing.T,
-) {
-	request := validRecordRequest()
-
-	if err := validateRequest(
-		request,
-	); err != nil {
+	if len(got.Threads) != 2 {
 		t.Fatalf(
-			"validateRequest() error = %v",
-			err,
-		)
-	}
-}
-
-func TestValidateRejectsUnknownMode(
-	t *testing.T,
-) {
-	request := validDumpRequest()
-
-	request.Mode = "unknown"
-
-	err := validateRequest(request)
-
-	if err == nil {
-		t.Fatal(
-			"validateRequest() error = nil",
+			"len(Threads) = %d, want 2",
+			len(got.Threads),
 		)
 	}
 
-	if !strings.Contains(
-		err.Error(),
-		"unsupported py-spy mode",
-	) {
+	if got.Threads[1].Name != "worker" {
 		t.Fatalf(
-			"unexpected error: %v",
-			err,
+			"second thread name = %q, want %q",
+			got.Threads[1].Name,
+			"worker",
 		)
 	}
 }
 
-func TestProfileDump(
+func TestParseDumpFrame(
 	t *testing.T,
 ) {
-	if runtime.GOOS == "windows" {
-		t.Skip(
-			"test uses shell script",
-		)
+	tests := []struct {
+		name string
+		line string
+		want DumpFrame
+	}{
+		{
+			name: "Python frame",
+			line: "forward (model.py:120)",
+			want: DumpFrame{
+				Function: "forward",
+				File:     "model.py",
+				Line:     120,
+			},
+		},
+		{
+			name: "Module frame",
+			line: "<module> (train.py:28)",
+			want: DumpFrame{
+				Function: "<module>",
+				File:     "train.py",
+				Line:     28,
+			},
+		},
+		{
+			name: "Frame without line",
+			line: "native_function (libtorch.so)",
+			want: DumpFrame{
+				Function: "native_function",
+				File:     "libtorch.so",
+			},
+		},
+		{
+			name: "Unstructured frame",
+			line: "unknown native frame",
+			want: DumpFrame{
+				Function: "unknown native frame",
+				Raw:      "unknown native frame",
+			},
+		},
 	}
 
-	const dumpData = `Process 1234: python train.py
+	for _, test := range tests {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				got := parseDumpFrame(
+					test.line,
+				)
 
+				if got != test.want {
+					t.Fatalf(
+						"parseDumpFrame() = %#v, want %#v",
+						got,
+						test.want,
+					)
+				}
+			},
+		)
+	}
+}
+
+func TestParseProfileDataDumpReturnsJSON(
+	t *testing.T,
+) {
+	const output = `Process 1234: python train.py
 Thread 1234 (active): "MainThread"
-    forward (train.py:20)
     train (train.py:40)
 `
 
-	binaryPath := writeFakePySpy(
-		t,
-		`
-if [ "$1" = "--version" ]; then
-	printf '%s\n' 'py-spy 0.4.1'
-	exit 0
-fi
-
-if [ "$1" = "dump" ]; then
-	cat <<'PROFILE'
-Process 1234: python train.py
-
-Thread 1234 (active): "MainThread"
-    forward (train.py:20)
-    train (train.py:40)
-PROFILE
-	exit 0
-fi
-
-exit 1
-`,
-	)
-
-	p, err := New(
-		Config{
-			BinaryPath: binaryPath,
+	data, err := parseProfileData(
+		coreprofiler.Request{
+			Mode: coreprofiler.ModeDump,
 		},
+		[]byte(output),
 	)
 	if err != nil {
 		t.Fatalf(
-			"New() error = %v",
+			"parseProfileData() error = %v",
 			err,
 		)
 	}
 
-	result, err := p.Profile(
-		context.Background(),
-		validDumpRequest(),
-	)
-	if err != nil {
+	if !json.Valid(data) {
 		t.Fatalf(
-			"Profile() error = %v",
-			err,
+			"data is not valid JSON: %s",
+			data,
 		)
 	}
 
-	if result.Mode !=
-		coreprofiler.ModeDump {
+	var result DumpResult
 
-		t.Fatalf(
-			"Mode = %q",
-			result.Mode,
-		)
-	}
-
-	if result.Format != "text" {
-		t.Fatalf(
-			"Format = %q",
-			result.Format,
-		)
-	}
-
-	if result.Text() != dumpData {
-		t.Fatalf(
-			"Text() = %q, want %q",
-			result.Text(),
-			dumpData,
-		)
-	}
-}
-
-func TestProfileRecord(
-	t *testing.T,
-) {
-	if runtime.GOOS == "windows" {
-		t.Skip(
-			"test uses shell script",
-		)
-	}
-
-	const recordData = `train;forward 20
-train;backward 10
-`
-
-	binaryPath := writeFakePySpy(
-		t,
-		`
-if [ "$1" = "--version" ]; then
-	printf '%s\n' 'py-spy 0.4.1'
-	exit 0
-fi
-
-if [ "$1" = "record" ]; then
-	cat <<'PROFILE'
-train;forward 20
-train;backward 10
-PROFILE
-	exit 0
-fi
-
-exit 1
-`,
-	)
-
-	p, err := New(
-		Config{
-			BinaryPath: binaryPath,
-		},
-	)
-	if err != nil {
-		t.Fatalf(
-			"New() error = %v",
-			err,
-		)
-	}
-
-	result, err := p.Profile(
-		context.Background(),
-		validRecordRequest(),
-	)
-	if err != nil {
-		t.Fatalf(
-			"Profile() error = %v",
-			err,
-		)
-	}
-
-	if result.Mode !=
-		coreprofiler.ModeRecord {
-
-		t.Fatalf(
-			"Mode = %q",
-			result.Mode,
-		)
-	}
-
-	if result.Format != "raw" {
-		t.Fatalf(
-			"Format = %q",
-			result.Format,
-		)
-	}
-
-	if result.Text() != recordData {
-		t.Fatalf(
-			"Text() = %q, want %q",
-			result.Text(),
-			recordData,
-		)
-	}
-}
-
-func TestProfileRejectsInvalidPID(
-	t *testing.T,
-) {
-	p, err := New(Config{})
-	if err != nil {
-		t.Fatalf(
-			"New() error = %v",
-			err,
-		)
-	}
-
-	request := validDumpRequest()
-
-	request.Target.PID = 0
-
-	result, err := p.Profile(
-		context.Background(),
-		request,
-	)
-
-	if err == nil {
-		t.Fatal(
-			"Profile() error = nil",
-		)
-	}
-
-	if result.Error == "" {
-		t.Fatal(
-			"result.Error is empty",
-		)
-	}
-}
-
-func TestProfileHonorsCanceledContext(
-	t *testing.T,
-) {
-	if runtime.GOOS == "windows" {
-		t.Skip(
-			"test uses shell script",
-		)
-	}
-
-	binaryPath := writeFakePySpy(
-		t,
-		`
-if [ "$1" = "--version" ]; then
-	printf '%s\n' 'py-spy 0.4.1'
-	exit 0
-fi
-
-exit 1
-`,
-	)
-
-	p, err := New(
-		Config{
-			BinaryPath: binaryPath,
-		},
-	)
-	if err != nil {
-		t.Fatalf(
-			"New() error = %v",
-			err,
-		)
-	}
-
-	ctx, cancel := context.WithCancel(
-		context.Background(),
-	)
-
-	cancel()
-
-	result, err := p.Profile(
-		ctx,
-		validDumpRequest(),
-	)
-
-	if err == nil {
-		t.Fatal(
-			"Profile() error = nil",
-		)
-	}
-
-	if !errors.Is(
-		err,
-		context.Canceled,
-	) {
-		t.Fatalf(
-			"error = %v",
-			err,
-		)
-	}
-
-	if result.Error == "" {
-		t.Fatal(
-			"result.Error is empty",
-		)
-	}
-}
-
-func validDumpRequest() (
-	coreprofiler.Request
-) {
-	return coreprofiler.Request{
-		Mode: coreprofiler.ModeDump,
-
-		Target: coreprofiler.Target{
-			PID: 1234,
-		},
-	}
-}
-
-func validRecordRequest() (
-	coreprofiler.Request
-) {
-	return coreprofiler.Request{
-		Mode: coreprofiler.ModeRecord,
-
-		Target: coreprofiler.Target{
-			PID: 1234,
-		},
-
-		Duration:
-			10 * time.Second,
-
-		SampleRate: 20,
-
-		Format: "raw",
-	}
-}
-
-func writeFakePySpy(
-	t *testing.T,
-	body string,
-) string {
-	t.Helper()
-
-	path := filepath.Join(
-		t.TempDir(),
-		"py-spy",
-	)
-
-	content :=
-		"#!/bin/sh\nset -eu\n" +
-			body
-
-	if err := os.WriteFile(
-		path,
-		[]byte(content),
-		0o700,
+	if err := json.Unmarshal(
+		data,
+		&result,
 	); err != nil {
 		t.Fatalf(
-			"write fake py-spy: %v",
+			"json.Unmarshal() error = %v",
 			err,
 		)
 	}
 
-	return path
+	if result.ProcessID != 1234 {
+		t.Fatalf(
+			"ProcessID = %d, want 1234",
+			result.ProcessID,
+		)
+	}
+}
+
+func TestParseProfileDataSpeedScope(
+	t *testing.T,
+) {
+	const output = `{"$schema":"https://www.speedscope.app/file-format-schema.json"}`
+
+	data, err := parseProfileData(
+		coreprofiler.Request{
+			Mode:   coreprofiler.ModeRecord,
+			Format: "speedscope",
+		},
+		[]byte(output),
+	)
+	if err != nil {
+		t.Fatalf(
+			"parseProfileData() error = %v",
+			err,
+		)
+	}
+
+	if !json.Valid(data) {
+		t.Fatalf(
+			"data is not valid JSON: %s",
+			data,
+		)
+	}
+}
+
+func TestParseProfileDataRejectsInvalidJSON(
+	t *testing.T,
+) {
+	_, err := parseProfileData(
+		coreprofiler.Request{
+			Mode:   coreprofiler.ModeRecord,
+			Format: "speedscope",
+		},
+		[]byte("not-json"),
+	)
+
+	if err == nil {
+		t.Fatal(
+			"parseProfileData() error = nil, want error",
+		)
+	}
+}
+
+func TestParseDumpRejectsUnknownOutput(
+	t *testing.T,
+) {
+	_, err := parseDump(
+		[]byte("unexpected output"),
+	)
+
+	if err == nil {
+		t.Fatal(
+			"parseDump() error = nil, want error",
+		)
+	}
 }
