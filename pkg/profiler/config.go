@@ -5,7 +5,8 @@ import (
 	"os"
 	"strings"
 	"time"
-
+	"regexp"
+		
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,12 +17,6 @@ const (
 
 type Config struct {
 	Profiling ProfilingConfig `yaml:"profiling"`
-}
-
-type ProfilingConfig struct {
-	Enabled bool        `yaml:"enabled"`
-	PySpy   PySpyConfig `yaml:"pyspy"`
-	Storage StorageConfig `yaml:"storage"`
 }
 
 type PySpyConfig struct {
@@ -35,6 +30,34 @@ type PySpyConfig struct {
 
 type StorageConfig struct {
 	Directory string `yaml:"directory"`
+}
+
+type ProfilingConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	Discovery DiscoveryConfig `yaml:"discovery"`
+
+	PySpy PySpyConfig `yaml:"pyspy"`
+
+	Storage StorageConfig `yaml:"storage"`
+}
+
+type DiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	ProcRoot string `yaml:"proc_root"`
+
+	Exclude ProcessExcludeConfig `yaml:"exclude"`
+}
+
+type ProcessExcludeConfig struct {
+	PIDs []int `yaml:"pids"`
+
+	Users []string `yaml:"users"`
+
+	CommandRegex []string `yaml:"command_regex"`
+
+	ExecutableRegex []string `yaml:"executable_regex"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -98,6 +121,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Profiling.Storage.Directory == "" {
 		cfg.Profiling.Storage.Directory = "./profiles"
 	}
+
+	if strings.TrimSpace(
+		cfg.Profiling.Discovery.ProcRoot,
+	) == "" {
+		cfg.Profiling.Discovery.ProcRoot = "/proc"
+	}
 }
 
 func (c Config) Validate() error {
@@ -105,6 +134,12 @@ func (c Config) Validate() error {
 		return nil
 	}
 
+	if err := validateDiscoveryConfig(
+		c.Profiling.Discovery,
+	); err != nil {
+		return err
+	}
+		
 	switch c.Profiling.PySpy.Mode {
 	case ModeDump:
 		// dump에는 PID와 native 설정만 필요하다.
@@ -168,4 +203,40 @@ func (c Config) Duration() (
 	return time.ParseDuration(
 		c.Profiling.PySpy.Duration,
 	)
+}
+
+func validateDiscoveryConfig(
+	cfg DiscoveryConfig,
+) error {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	if strings.TrimSpace(cfg.ProcRoot) == "" {
+		return fmt.Errorf(
+			"profiling.discovery.proc_root must not be empty",
+		)
+	}
+
+	for _, pattern := range cfg.Exclude.CommandRegex {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf(
+				"invalid profiling.discovery.exclude.command_regex %q: %w",
+				pattern,
+				err,
+			)
+		}
+	}
+
+	for _, pattern := range cfg.Exclude.ExecutableRegex {
+		if _, err := regexp.Compile(pattern); err != nil {
+			return fmt.Errorf(
+				"invalid profiling.discovery.exclude.executable_regex %q: %w",
+				pattern,
+				err,
+			)
+		}
+	}
+
+	return nil
 }
