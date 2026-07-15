@@ -5,6 +5,7 @@ package host
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -30,9 +31,24 @@ func readSystemMemoryInfo() (systemMemoryInfo, error) {
 	}
 	defer file.Close()
 
+	memory, err := parseSystemMemoryInfo(file)
+	if err != nil {
+		return systemMemoryInfo{}, fmt.Errorf(
+			"parse %s: %w",
+			procMeminfoPath,
+			err,
+		)
+	}
+
+	return memory, nil
+}
+
+func parseSystemMemoryInfo(
+	reader io.Reader,
+) (systemMemoryInfo, error) {
 	values := make(map[string]uint64)
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		key, value, ok := parseMeminfoLine(scanner.Text())
 		if !ok {
@@ -44,8 +60,7 @@ func readSystemMemoryInfo() (systemMemoryInfo, error) {
 
 	if err := scanner.Err(); err != nil {
 		return systemMemoryInfo{}, fmt.Errorf(
-			"scan %s: %w",
-			procMeminfoPath,
+			"scan memory info: %w",
 			err,
 		)
 	}
@@ -53,24 +68,21 @@ func readSystemMemoryInfo() (systemMemoryInfo, error) {
 	total, ok := values["MemTotal"]
 	if !ok {
 		return systemMemoryInfo{}, fmt.Errorf(
-			"MemTotal not found in %s",
-			procMeminfoPath,
+			"MemTotal not found",
 		)
 	}
 
 	available, ok := values["MemAvailable"]
 	if !ok {
 		return systemMemoryInfo{}, fmt.Errorf(
-			"MemAvailable not found in %s",
-			procMeminfoPath,
+			"MemAvailable not found",
 		)
 	}
 
 	free, ok := values["MemFree"]
 	if !ok {
 		return systemMemoryInfo{}, fmt.Errorf(
-			"MemFree not found in %s",
-			procMeminfoPath,
+			"MemFree not found",
 		)
 	}
 
@@ -87,7 +99,9 @@ func readSystemMemoryInfo() (systemMemoryInfo, error) {
 	}, nil
 }
 
-func parseMeminfoLine(line string) (string, uint64, bool) {
+func parseMeminfoLine(
+	line string,
+) (string, uint64, bool) {
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
 		return "", 0, false
@@ -95,7 +109,11 @@ func parseMeminfoLine(line string) (string, uint64, bool) {
 
 	key := strings.TrimSuffix(fields[0], ":")
 
-	value, err := strconv.ParseUint(fields[1], 10, 64)
+	value, err := strconv.ParseUint(
+		fields[1],
+		10,
+		64,
+	)
 	if err != nil {
 		return "", 0, false
 	}
