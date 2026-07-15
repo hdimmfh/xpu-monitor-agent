@@ -378,17 +378,12 @@ func printProfile(
 	profile coreprofiler.Profile,
 ) {
 	fmt.Printf(
-		"profile=%s mode=%s pid=%d format=%s started_at=%s ended_at=%s",
+		"profile=%s pid=%d format=%s started_at=%s ended_at=%s",
 		profile.Profiler,
-		profile.Mode,
 		profile.Target.PID,
 		profile.Format,
-		profile.StartedAt.Format(
-			time.RFC3339Nano,
-		),
-		profile.EndedAt.Format(
-			time.RFC3339Nano,
-		),
+		profile.StartedAt.Format(time.RFC3339Nano),
+		profile.EndedAt.Format(time.RFC3339Nano),
 	)
 
 	if profile.Target.Hostname != "" {
@@ -427,25 +422,18 @@ func printProfile(
 	}
 
 	fmt.Println()
-
-	fmt.Println(
-		"profile_data_begin",
-	)
+	fmt.Println("profile_data_begin")
 
 	fmt.Print(
 		profile.Text(),
 	)
 
 	if len(profile.Data) > 0 &&
-		profile.Data[
-			len(profile.Data)-1
-		] != '\n' {
+		profile.Data[len(profile.Data)-1] != '\n' {
 		fmt.Println()
 	}
 
-	fmt.Println(
-		"profile_data_end",
-	)
+	fmt.Println("profile_data_end")
 }
 
 func printUsage() {
