@@ -1,10 +1,23 @@
 profiling:
   enabled: true
 
+  discovery:
+    enabled: true
+    proc_root: /proc
+
+    exclude:
+      pids: []
+
+      users: []
+
+      command_regex:
+        - "ipykernel"
+        - "jupyter.*kernel"
+        - "health[_-]?check"
+
+      executable_regex: []
+
   pyspy:
     binary: py-spy
-    mode: record
-    duration: 10s
-    sample_rate: 20
-    format: raw
+    mode: dump
     native: false
