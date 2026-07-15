@@ -52,6 +52,9 @@ func run(ctx context.Context, args []string) error {
 	}
 }
 
+// runCollect collects host and NVIDIA device metrics.
+//
+// The existing metric output format is intentionally preserved.
 func runCollect(ctx context.Context) error {
 	nvidiaPlugin, err := nvidia.New()
 	if err != nil {
@@ -89,6 +92,10 @@ func runCollect(ctx context.Context) error {
 	return nil
 }
 
+// runProfile performs one py-spy profiling operation.
+//
+// The profile is returned directly in memory through Profile.Data.
+// No profile or metadata file is created.
 func runProfile(ctx context.Context, args []string) error {
 	flags := flag.NewFlagSet(
 		"profile",
@@ -107,10 +114,34 @@ func runProfile(ctx context.Context, args []string) error {
 		"target Python process ID",
 	)
 
+	deviceID := flags.String(
+		"device-id",
+		"",
+		"device ID associated with the target process",
+	)
+
+	containerID := flags.String(
+		"container-id",
+		"",
+		"container ID associated with the target process",
+	)
+
+	jobID := flags.String(
+		"job-id",
+		"",
+		"job ID associated with the target process",
+	)
+
+	command := flags.String(
+		"command",
+		"",
+		"command associated with the target process",
+	)
+
 	durationOverride := flags.Duration(
 		"duration",
 		0,
-		"profiling duration override",
+		"profiling duration override, for example 10s",
 	)
 
 	rateOverride := flags.Int(
@@ -122,13 +153,19 @@ func runProfile(ctx context.Context, args []string) error {
 	formatOverride := flags.String(
 		"format",
 		"",
-		"output format override",
+		"output format override: raw, flamegraph, speedscope, or chrometrace",
 	)
 
 	nativeOverride := flags.Bool(
 		"native",
 		false,
-		"collect native stack frames",
+		"include native stack frames",
+	)
+
+	withMetrics := flags.Bool(
+		"with-metrics",
+		false,
+		"collect host and device metrics before profiling",
 	)
 
 	if err := flags.Parse(args); err != nil {
@@ -169,59 +206,183 @@ func runProfile(ctx context.Context, args []string) error {
 
 	native := cfg.Profiling.PySpy.Native || *nativeOverride
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("get hostname: %w", err)
+	}
+
 	p, err := pyspy.New(pyspy.Config{
 		BinaryPath: cfg.Profiling.PySpy.Binary,
-		OutputDir:  cfg.Profiling.Storage.Directory,
 	})
 	if err != nil {
 		return fmt.Errorf("create py-spy profiler: %w", err)
 	}
 
-	request := coreprofiler.Request{
-		Target: coreprofiler.Target{
-			PID: *pid,
+	if *withMetrics {
+		if err := runCollect(ctx); err != nil {
+			return err
+		}
+
+		fmt.Println()
+	}
+
+	result, err := p.Profile(
+		ctx,
+		coreprofiler.Request{
+			Target: coreprofiler.Target{
+				PID:         *pid,
+				DeviceID:    *deviceID,
+				Hostname:    hostname,
+				Command:     *command,
+				ContainerID: *containerID,
+				JobID:       *jobID,
+			},
+			Duration:   duration,
+			SampleRate: sampleRate,
+			Format:     format,
+			Native:     native,
 		},
-		Duration:   duration,
-		SampleRate: sampleRate,
-		Format:     format,
-		Native:     native,
-	}
-
-	result, err := p.Profile(ctx, request)
+	)
 	if err != nil {
-		return fmt.Errorf("profile PID %d: %w", *pid, err)
+		return fmt.Errorf(
+			"profile PID %d: %w",
+			*pid,
+			err,
+		)
 	}
 
-	fmt.Printf("profiler=%s\n", result.Profiler)
-	fmt.Printf("pid=%d\n", result.Target.PID)
-	fmt.Printf("started_at=%s\n", result.StartedAt.Format(time.RFC3339Nano))
-	fmt.Printf("ended_at=%s\n", result.EndedAt.Format(time.RFC3339Nano))
-	fmt.Printf("format=%s\n", result.Format)
-	fmt.Printf("output=%s\n", result.OutputPath)
-	fmt.Printf("metadata=%s\n", result.MetadataPath)
+	printProfile(result)
 
 	return nil
+}
+
+func printProfile(profile coreprofiler.Profile) {
+	fmt.Printf(
+		"profile=%s pid=%d format=%s started_at=%s ended_at=%s",
+		profile.Profiler,
+		profile.Target.PID,
+		profile.Format,
+		profile.StartedAt.Format(time.RFC3339Nano),
+		profile.EndedAt.Format(time.RFC3339Nano),
+	)
+
+	if profile.Target.Hostname != "" {
+		fmt.Printf(
+			" hostname=%q",
+			profile.Target.Hostname,
+		)
+	}
+
+	if profile.Target.DeviceID != "" {
+		fmt.Printf(
+			" device=%q",
+			profile.Target.DeviceID,
+		)
+	}
+
+	if profile.Target.ContainerID != "" {
+		fmt.Printf(
+			" container_id=%q",
+			profile.Target.ContainerID,
+		)
+	}
+
+	if profile.Target.JobID != "" {
+		fmt.Printf(
+			" job_id=%q",
+			profile.Target.JobID,
+		)
+	}
+
+	if profile.Target.Command != "" {
+		fmt.Printf(
+			" command=%q",
+			profile.Target.Command,
+		)
+	}
+
+	fmt.Println()
+	fmt.Println("profile_data_begin")
+
+	fmt.Print(profile.Text())
+
+	if len(profile.Data) > 0 &&
+		profile.Data[len(profile.Data)-1] != '\n' {
+		fmt.Println()
+	}
+
+	fmt.Println("profile_data_end")
 }
 
 func printUsage() {
 	fmt.Print(`XPUMON
 
 Usage:
+  xpumon
   xpumon collect
   xpumon profile --pid <PID> [options]
 
+Commands:
+  collect
+      Collect host and accelerator metrics.
+
+  profile
+      Collect one py-spy profile and return it as text.
+      No profile file is created.
+
 Profile options:
-  --config <path>      configuration file
-  --pid <PID>          target Python process ID
-  --duration <value>   profiling duration override
-  --rate <number>      sampling rate override
-  --format <format>    raw, flamegraph, speedscope, chrometrace
-  --native             include native stack frames
+  --config <path>
+      Configuration file path.
+      Default: ./configs/xpumon.yaml
+
+  --pid <PID>
+      Target Python process ID. Required.
+
+  --duration <duration>
+      Override the YAML profiling duration.
+      Example: 10s
+
+  --rate <number>
+      Override the YAML sampling rate.
+
+  --format <format>
+      Override the YAML output format.
+      Supported: raw, flamegraph, speedscope, chrometrace
+
+  --native
+      Include native stack frames.
+
+  --with-metrics
+      Print existing host and device metrics before the profile.
+
+  --device-id <ID>
+      Device ID associated with the process.
+
+  --container-id <ID>
+      Container ID associated with the process.
+
+  --job-id <ID>
+      Job ID associated with the process.
+
+  --command <command>
+      Command associated with the process.
 
 Examples:
+  xpumon
   xpumon collect
-  xpumon profile --pid 1234
-  xpumon profile --pid 1234 --duration 30s
-  xpumon profile --pid 1234 --format speedscope
+
+  xpumon profile \
+    --pid 124243
+
+  xpumon profile \
+    --pid 124243 \
+    --duration 10s \
+    --rate 20 \
+    --format raw
+
+  xpumon profile \
+    --pid 124243 \
+    --with-metrics \
+    --device-id GPU-8994d77e-21c7-99de-5b47-d8180c8d8623
 `)
 }
