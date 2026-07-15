@@ -161,7 +161,7 @@ func runProfile(
 	pid := flags.Int(
 		"pid",
 		0,
-		"target Python process ID",
+		"optional target Python process ID; omit to discover all Python processes",
 	)
 
 	deviceID := flags.String(
@@ -222,9 +222,9 @@ func runProfile(
 		return err
 	}
 
-	if *pid <= 0 {
-		return errors.New(
-			"--pid must be greater than zero",
+	if *pid < 0 {
+		return fmt.Errorf(
+			"--pid must not be negative",
 		)
 	}
 
@@ -274,26 +274,46 @@ func runProfile(
 		if err := runCollect(ctx); err != nil {
 			return err
 		}
-
+	
 		fmt.Println()
 	}
-
-	result, err := p.Profile(
-		ctx,
-		request,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"profile PID %d: %w",
-			*pid,
-			err,
+	
+	if *pid > 0 {
+		return profileSingleProcess(
+			ctx,
+			p,
+			cfg,
+			process.Process{
+				PID:     *pid,
+				Command: *command,
+			},
+			*deviceID,
+			*containerID,
+			*jobID,
+			*durationOverride,
+			*rateOverride,
+			*formatOverride,
+			*nativeOverride,
 		)
 	}
-
-	printProfile(result)
-
-	return nil
-}
+	
+	if !cfg.Profiling.Discovery.Enabled {
+		return fmt.Errorf(
+			"--pid is required when profiling.discovery.enabled is false",
+		)
+	}
+	
+	return profileDiscoveredProcesses(
+		ctx,
+		p,
+		cfg,
+		*deviceID,
+		*jobID,
+		*durationOverride,
+		*rateOverride,
+		*formatOverride,
+		*nativeOverride,
+	)
 
 func buildProfileRequest(
 	cfg coreprofiler.Config,
@@ -523,4 +543,154 @@ Examples:
 
 `,
 	)
+}
+
+func profileDiscoveredProcesses(
+	ctx context.Context,
+	p coreprofiler.Profiler,
+	cfg coreprofiler.Config,
+	deviceID string,
+	jobID string,
+	durationOverride time.Duration,
+	rateOverride int,
+	formatOverride string,
+	nativeOverride bool,
+) error {
+	processes, err := process.DiscoverPython(
+		cfg.Profiling.Discovery.ProcRoot,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"discover Python processes: %w",
+			err,
+		)
+	}
+
+	filter, err := process.NewFilter(
+		cfg.Profiling.Discovery.Exclude,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"create process filter: %w",
+			err,
+		)
+	}
+
+	profiledCount := 0
+	excludedCount := 0
+	failedCount := 0
+
+	for _, targetProcess := range processes {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		excluded, reason := filter.Excluded(
+			targetProcess,
+		)
+		if excluded {
+			excludedCount++
+
+			log.Printf(
+				"skip Python process pid=%d command=%q reason=%s",
+				targetProcess.PID,
+				targetProcess.Command,
+				reason,
+			)
+
+			continue
+		}
+
+		err := profileSingleProcess(
+			ctx,
+			p,
+			cfg,
+			targetProcess,
+			deviceID,
+			"",
+			jobID,
+			durationOverride,
+			rateOverride,
+			formatOverride,
+			nativeOverride,
+		)
+		if err != nil {
+			failedCount++
+
+			log.Printf(
+				"profile Python process pid=%d command=%q: %v",
+				targetProcess.PID,
+				targetProcess.Command,
+				err,
+			)
+
+			continue
+		}
+
+		profiledCount++
+	}
+
+	log.Printf(
+		"Python profiling complete discovered=%d profiled=%d excluded=%d failed=%d",
+		len(processes),
+		profiledCount,
+		excludedCount,
+		failedCount,
+	)
+
+	if profiledCount == 0 && failedCount > 0 {
+		return fmt.Errorf(
+			"all selected Python processes failed profiling",
+		)
+	}
+
+	return nil
+}
+
+func profileSingleProcess(
+	ctx context.Context,
+	p coreprofiler.Profiler,
+	cfg coreprofiler.Config,
+	targetProcess process.Process,
+	deviceID string,
+	containerID string,
+	jobID string,
+	durationOverride time.Duration,
+	rateOverride int,
+	formatOverride string,
+	nativeOverride bool,
+) error {
+	request, err := buildProfileRequest(
+		cfg,
+		targetProcess.PID,
+		deviceID,
+		containerID,
+		jobID,
+		targetProcess.Command,
+		durationOverride,
+		rateOverride,
+		formatOverride,
+		nativeOverride,
+	)
+	if err != nil {
+		return err
+	}
+
+	result, err := p.Profile(
+		ctx,
+		request,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"profile PID %d: %w",
+			targetProcess.PID,
+			err,
+		)
+	}
+
+	printProfile(result)
+
+	fmt.Println()
+
+	return nil
 }
