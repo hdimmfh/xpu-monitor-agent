@@ -4,7 +4,4 @@ profiling:
   pyspy:
     binary: py-spy
     mode: dump
-    duration: 10s
-    sample_rate: 20
-    format: raw
     native: false
