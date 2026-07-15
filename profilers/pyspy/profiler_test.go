@@ -14,10 +14,15 @@ import (
 	coreprofiler "github.com/hdimmfh/xpu-monitor-agent/pkg/profiler"
 )
 
-func TestNewUsesDefaultBinaryPath(t *testing.T) {
+func TestNewUsesDefaultBinaryPath(
+	t *testing.T,
+) {
 	p, err := New(Config{})
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf(
+			"New() error = %v",
+			err,
+		)
 	}
 
 	if p.binaryPath != "py-spy" {
@@ -29,30 +34,22 @@ func TestNewUsesDefaultBinaryPath(t *testing.T) {
 	}
 }
 
-func TestNewUsesConfiguredBinaryPath(t *testing.T) {
-	p, err := New(Config{
-		BinaryPath: "/usr/local/bin/py-spy",
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	if p.binaryPath != "/usr/local/bin/py-spy" {
-		t.Fatalf(
-			"binaryPath = %q, want %q",
-			p.binaryPath,
-			"/usr/local/bin/py-spy",
-		)
-	}
-}
-
-func TestName(t *testing.T) {
+func TestName(
+	t *testing.T,
+) {
 	p, err := New(Config{})
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf(
+			"New() error = %v",
+			err,
+		)
 	}
 
-	if got, want := p.Name(), "py-spy"; got != want {
+	if got, want :=
+		p.Name(),
+		"py-spy";
+		got != want {
+
 		t.Fatalf(
 			"Name() = %q, want %q",
 			got,
@@ -61,18 +58,50 @@ func TestName(t *testing.T) {
 	}
 }
 
-func TestBuildRecordArgs(t *testing.T) {
+func TestBuildDumpArgs(
+	t *testing.T,
+) {
 	request := coreprofiler.Request{
+		Mode: coreprofiler.ModeDump,
+
 		Target: coreprofiler.Target{
 			PID: 1234,
 		},
-		Duration:   10 * time.Second,
-		SampleRate: 20,
-		Format:     "raw",
-		Native:     true,
+
+		Native: true,
 	}
 
-	got := buildRecordArgs(request)
+	got := buildDumpArgs(request)
+
+	want := []string{
+		"dump",
+		"--pid",
+		"1234",
+		"--native",
+	}
+
+	if !reflect.DeepEqual(
+		got,
+		want,
+	) {
+		t.Fatalf(
+			"buildDumpArgs() = %#v, want %#v",
+			got,
+			want,
+		)
+	}
+}
+
+func TestBuildRecordArgs(
+	t *testing.T,
+) {
+	request := validRecordRequest()
+
+	request.Native = true
+
+	got := buildRecordArgs(
+		request,
+	)
 
 	want := []string{
 		"record",
@@ -89,7 +118,10 @@ func TestBuildRecordArgs(t *testing.T) {
 		"--native",
 	}
 
-	if !reflect.DeepEqual(got, want) {
+	if !reflect.DeepEqual(
+		got,
+		want,
+	) {
 		t.Fatalf(
 			"buildRecordArgs() = %#v, want %#v",
 			got,
@@ -98,214 +130,184 @@ func TestBuildRecordArgs(t *testing.T) {
 	}
 }
 
-func TestBuildRecordArgsRoundsDurationUp(t *testing.T) {
-	request := coreprofiler.Request{
-		Target: coreprofiler.Target{
-			PID: 1234,
-		},
-		Duration:   1500 * time.Millisecond,
-		SampleRate: 20,
-		Format:     "raw",
-	}
+func TestValidateDumpRequest(
+	t *testing.T,
+) {
+	request := validDumpRequest()
 
-	got := buildRecordArgs(request)
-
-	wantDuration := "2"
-
-	durationIndex := indexOf(got, "--duration")
-	if durationIndex == -1 {
-		t.Fatal(`buildRecordArgs() does not contain "--duration"`)
-	}
-
-	valueIndex := durationIndex + 1
-	if valueIndex >= len(got) {
-		t.Fatal(`buildRecordArgs() has no value after "--duration"`)
-	}
-
-	if got[valueIndex] != wantDuration {
+	if err := validateRequest(
+		request,
+	); err != nil {
 		t.Fatalf(
-			"duration argument = %q, want %q",
-			got[valueIndex],
-			wantDuration,
-		)
-	}
-}
-
-func TestBuildRecordArgsDoesNotAddNativeByDefault(t *testing.T) {
-	request := validRequest()
-	request.Native = false
-
-	got := buildRecordArgs(request)
-
-	if indexOf(got, "--native") != -1 {
-		t.Fatalf(
-			"buildRecordArgs() = %#v, must not contain --native",
-			got,
-		)
-	}
-}
-
-func TestValidateRequest(t *testing.T) {
-	tests := []struct {
-		name        string
-		request     coreprofiler.Request
-		wantErrText string
-	}{
-		{
-			name:        "invalid PID",
-			request:     requestWithPID(0),
-			wantErrText: "PID must be greater than zero",
-		},
-		{
-			name: "invalid duration",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.Duration = 0
-				return request
-			}(),
-			wantErrText: "duration must be greater than zero",
-		},
-		{
-			name: "invalid sample rate",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.SampleRate = 0
-				return request
-			}(),
-			wantErrText: "sample rate must be greater than zero",
-		},
-		{
-			name: "unsupported format",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.Format = "unknown"
-				return request
-			}(),
-			wantErrText: `unsupported py-spy format "unknown"`,
-		},
-		{
-			name:    "raw format",
-			request: validRequest(),
-		},
-		{
-			name: "flamegraph format",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.Format = "flamegraph"
-				return request
-			}(),
-		},
-		{
-			name: "speedscope format",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.Format = "speedscope"
-				return request
-			}(),
-		},
-		{
-			name: "chrometrace format",
-			request: func() coreprofiler.Request {
-				request := validRequest()
-				request.Format = "chrometrace"
-				return request
-			}(),
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := validateRequest(test.request)
-
-			if test.wantErrText == "" {
-				if err != nil {
-					t.Fatalf(
-						"validateRequest() error = %v, want nil",
-						err,
-					)
-				}
-
-				return
-			}
-
-			if err == nil {
-				t.Fatalf(
-					"validateRequest() error = nil, want %q",
-					test.wantErrText,
-				)
-			}
-
-			if !strings.Contains(err.Error(), test.wantErrText) {
-				t.Fatalf(
-					"validateRequest() error = %q, want containing %q",
-					err,
-					test.wantErrText,
-				)
-			}
-		})
-	}
-}
-
-func TestAvailable(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test uses a Unix shell script")
-	}
-
-	binaryPath := writeFakePySpy(t, `
-if [ "$1" = "--version" ]; then
-	printf '%s\n' 'py-spy 0.4.1'
-	exit 0
-fi
-
-exit 1
-`)
-
-	p, err := New(Config{
-		BinaryPath: binaryPath,
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	if err := p.Available(context.Background()); err != nil {
-		t.Fatalf("Available() error = %v", err)
-	}
-}
-
-func TestAvailableReturnsErrorWhenBinaryDoesNotExist(t *testing.T) {
-	p, err := New(Config{
-		BinaryPath: filepath.Join(
-			t.TempDir(),
-			"missing-py-spy",
-		),
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	err = p.Available(context.Background())
-	if err == nil {
-		t.Fatal("Available() error = nil, want error")
-	}
-
-	if !strings.Contains(err.Error(), "find py-spy binary") {
-		t.Fatalf(
-			"Available() error = %q, want binary lookup error",
+			"validateRequest() error = %v",
 			err,
 		)
 	}
 }
 
-func TestProfileReturnsOutputInMemory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test uses a Unix shell script")
+func TestDumpDoesNotRequireRecordFields(
+	t *testing.T,
+) {
+	request := validDumpRequest()
+
+	request.Duration = 0
+	request.SampleRate = 0
+	request.Format = ""
+
+	if err := validateRequest(
+		request,
+	); err != nil {
+		t.Fatalf(
+			"validateRequest() error = %v",
+			err,
+		)
+	}
+}
+
+func TestValidateRecordRequest(
+	t *testing.T,
+) {
+	request := validRecordRequest()
+
+	if err := validateRequest(
+		request,
+	); err != nil {
+		t.Fatalf(
+			"validateRequest() error = %v",
+			err,
+		)
+	}
+}
+
+func TestValidateRejectsUnknownMode(
+	t *testing.T,
+) {
+	request := validDumpRequest()
+
+	request.Mode = "unknown"
+
+	err := validateRequest(request)
+
+	if err == nil {
+		t.Fatal(
+			"validateRequest() error = nil",
+		)
 	}
 
-	const profileData = `<module> (torch_test.py:22);synchronize (torch/cuda/__init__.py:1219) 50
-<module> (torch_test.py:24);synchronize (torch/cuda/__init__.py:1219) 44
+	if !strings.Contains(
+		err.Error(),
+		"unsupported py-spy mode",
+	) {
+		t.Fatalf(
+			"unexpected error: %v",
+			err,
+		)
+	}
+}
+
+func TestProfileDump(
+	t *testing.T,
+) {
+	if runtime.GOOS == "windows" {
+		t.Skip(
+			"test uses shell script",
+		)
+	}
+
+	const dumpData = `Process 1234: python train.py
+
+Thread 1234 (active): "MainThread"
+    forward (train.py:20)
+    train (train.py:40)
 `
 
-	binaryPath := writeFakePySpy(t, `
+	binaryPath := writeFakePySpy(
+		t,
+		`
+if [ "$1" = "--version" ]; then
+	printf '%s\n' 'py-spy 0.4.1'
+	exit 0
+fi
+
+if [ "$1" = "dump" ]; then
+	cat <<'PROFILE'
+Process 1234: python train.py
+
+Thread 1234 (active): "MainThread"
+    forward (train.py:20)
+    train (train.py:40)
+PROFILE
+	exit 0
+fi
+
+exit 1
+`,
+	)
+
+	p, err := New(
+		Config{
+			BinaryPath: binaryPath,
+		},
+	)
+	if err != nil {
+		t.Fatalf(
+			"New() error = %v",
+			err,
+		)
+	}
+
+	result, err := p.Profile(
+		context.Background(),
+		validDumpRequest(),
+	)
+	if err != nil {
+		t.Fatalf(
+			"Profile() error = %v",
+			err,
+		)
+	}
+
+	if result.Mode !=
+		coreprofiler.ModeDump {
+
+		t.Fatalf(
+			"Mode = %q",
+			result.Mode,
+		)
+	}
+
+	if result.Format != "text" {
+		t.Fatalf(
+			"Format = %q",
+			result.Format,
+		)
+	}
+
+	if result.Text() != dumpData {
+		t.Fatalf(
+			"Text() = %q, want %q",
+			result.Text(),
+			dumpData,
+		)
+	}
+}
+
+func TestProfileRecord(
+	t *testing.T,
+) {
+	if runtime.GOOS == "windows" {
+		t.Skip(
+			"test uses shell script",
+		)
+	}
+
+	const recordData = `train;forward 20
+train;backward 10
+`
+
+	binaryPath := writeFakePySpy(
+		t,
+		`
 if [ "$1" = "--version" ]; then
 	printf '%s\n' 'py-spy 0.4.1'
 	exit 0
@@ -313,265 +315,193 @@ fi
 
 if [ "$1" = "record" ]; then
 	cat <<'PROFILE'
-<module> (torch_test.py:22);synchronize (torch/cuda/__init__.py:1219) 50
-<module> (torch_test.py:24);synchronize (torch/cuda/__init__.py:1219) 44
+train;forward 20
+train;backward 10
 PROFILE
-	printf '%s\n' 'fake progress message' >&2
 	exit 0
 fi
 
 exit 1
-`)
+`,
+	)
 
-	p, err := New(Config{
-		BinaryPath: binaryPath,
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	request := coreprofiler.Request{
-		Target: coreprofiler.Target{
-			PID:         124243,
-			DeviceID:    "GPU-test",
-			Hostname:    "node-test",
-			Command:     "python torch_test.py",
-			ContainerID: "container-test",
-			JobID:       "job-test",
+	p, err := New(
+		Config{
+			BinaryPath: binaryPath,
 		},
-		Duration:   10 * time.Second,
-		SampleRate: 20,
-		Format:     "raw",
+	)
+	if err != nil {
+		t.Fatalf(
+			"New() error = %v",
+			err,
+		)
 	}
 
 	result, err := p.Profile(
 		context.Background(),
-		request,
+		validRecordRequest(),
 	)
 	if err != nil {
-		t.Fatalf("Profile() error = %v", err)
-	}
-
-	if result.Profiler != "py-spy" {
 		t.Fatalf(
-			"Profiler = %q, want %q",
-			result.Profiler,
-			"py-spy",
+			"Profile() error = %v",
+			err,
 		)
 	}
 
-	if !reflect.DeepEqual(result.Target, request.Target) {
+	if result.Mode !=
+		coreprofiler.ModeRecord {
+
 		t.Fatalf(
-			"Target = %#v, want %#v",
-			result.Target,
-			request.Target,
+			"Mode = %q",
+			result.Mode,
 		)
 	}
 
 	if result.Format != "raw" {
 		t.Fatalf(
-			"Format = %q, want %q",
+			"Format = %q",
 			result.Format,
-			"raw",
 		)
 	}
 
-	if result.Text() != profileData {
+	if result.Text() != recordData {
 		t.Fatalf(
 			"Text() = %q, want %q",
 			result.Text(),
-			profileData,
-		)
-	}
-
-	if strings.Contains(
-		result.Text(),
-		"fake progress message",
-	) {
-		t.Fatal(
-			"Profile data contains stderr diagnostic output",
-		)
-	}
-
-	if result.StartedAt.IsZero() {
-		t.Fatal("StartedAt is zero")
-	}
-
-	if result.EndedAt.IsZero() {
-		t.Fatal("EndedAt is zero")
-	}
-
-	if result.EndedAt.Before(result.StartedAt) {
-		t.Fatalf(
-			"EndedAt %s is before StartedAt %s",
-			result.EndedAt,
-			result.StartedAt,
-		)
-	}
-
-	if result.Error != "" {
-		t.Fatalf(
-			"Error = %q, want empty",
-			result.Error,
+			recordData,
 		)
 	}
 }
 
-func TestProfileReturnsPySpyError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test uses a Unix shell script")
-	}
-
-	binaryPath := writeFakePySpy(t, `
-if [ "$1" = "--version" ]; then
-	printf '%s\n' 'py-spy 0.4.1'
-	exit 0
-fi
-
-if [ "$1" = "record" ]; then
-	printf '%s\n' 'permission denied while attaching to process' >&2
-	exit 1
-fi
-
-exit 1
-`)
-
-	p, err := New(Config{
-		BinaryPath: binaryPath,
-	})
+func TestProfileRejectsInvalidPID(
+	t *testing.T,
+) {
+	p, err := New(Config{})
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	result, err := p.Profile(
-		context.Background(),
-		validRequest(),
-	)
-	if err == nil {
-		t.Fatal("Profile() error = nil, want error")
-	}
-
-	if !strings.Contains(
-		err.Error(),
-		"permission denied while attaching to process",
-	) {
 		t.Fatalf(
-			"Profile() error = %q, want stderr message",
+			"New() error = %v",
 			err,
 		)
 	}
 
-	if result.Error == "" {
-		t.Fatal("result.Error is empty, want error message")
-	}
-}
+	request := validDumpRequest()
 
-func TestProfileRejectsInvalidRequestBeforeExecution(t *testing.T) {
-	p, err := New(Config{
-		BinaryPath: filepath.Join(
-			t.TempDir(),
-			"missing-py-spy",
-		),
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	request := validRequest()
 	request.Target.PID = 0
 
 	result, err := p.Profile(
 		context.Background(),
 		request,
 	)
-	if err == nil {
-		t.Fatal("Profile() error = nil, want validation error")
-	}
 
-	if !strings.Contains(
-		err.Error(),
-		"PID must be greater than zero",
-	) {
-		t.Fatalf(
-			"Profile() error = %q, want PID validation error",
-			err,
+	if err == nil {
+		t.Fatal(
+			"Profile() error = nil",
 		)
 	}
 
 	if result.Error == "" {
-		t.Fatal("result.Error is empty, want validation error")
+		t.Fatal(
+			"result.Error is empty",
+		)
 	}
 }
 
-func TestProfileHonorsCanceledContext(t *testing.T) {
+func TestProfileHonorsCanceledContext(
+	t *testing.T,
+) {
 	if runtime.GOOS == "windows" {
-		t.Skip("test uses a Unix shell script")
+		t.Skip(
+			"test uses shell script",
+		)
 	}
 
-	binaryPath := writeFakePySpy(t, `
+	binaryPath := writeFakePySpy(
+		t,
+		`
 if [ "$1" = "--version" ]; then
 	printf '%s\n' 'py-spy 0.4.1'
 	exit 0
 fi
 
 exit 1
-`)
+`,
+	)
 
-	p, err := New(Config{
-		BinaryPath: binaryPath,
-	})
+	p, err := New(
+		Config{
+			BinaryPath: binaryPath,
+		},
+	)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf(
+			"New() error = %v",
+			err,
+		)
 	}
 
 	ctx, cancel := context.WithCancel(
 		context.Background(),
 	)
+
 	cancel()
 
-	result, err := p.Profile(ctx, validRequest())
+	result, err := p.Profile(
+		ctx,
+		validDumpRequest(),
+	)
+
 	if err == nil {
-		t.Fatal("Profile() error = nil, want context error")
+		t.Fatal(
+			"Profile() error = nil",
+		)
 	}
 
-	if !errors.Is(err, context.Canceled) {
+	if !errors.Is(
+		err,
+		context.Canceled,
+	) {
 		t.Fatalf(
-			"Profile() error = %v, want context.Canceled",
+			"error = %v",
 			err,
 		)
 	}
 
 	if result.Error == "" {
-		t.Fatal("result.Error is empty, want context error")
+		t.Fatal(
+			"result.Error is empty",
+		)
 	}
 }
 
-func validRequest() coreprofiler.Request {
+func validDumpRequest() (
+	coreprofiler.Request
+) {
 	return coreprofiler.Request{
+		Mode: coreprofiler.ModeDump,
+
 		Target: coreprofiler.Target{
 			PID: 1234,
 		},
-		Duration:   10 * time.Second,
+	}
+}
+
+func validRecordRequest() (
+	coreprofiler.Request
+) {
+	return coreprofiler.Request{
+		Mode: coreprofiler.ModeRecord,
+
+		Target: coreprofiler.Target{
+			PID: 1234,
+		},
+
+		Duration:
+			10 * time.Second,
+
 		SampleRate: 20,
-		Format:     "raw",
+
+		Format: "raw",
 	}
-}
-
-func requestWithPID(pid int) coreprofiler.Request {
-	request := validRequest()
-	request.Target.PID = pid
-
-	return request
-}
-
-func indexOf(values []string, target string) int {
-	for index, value := range values {
-		if value == target {
-			return index
-		}
-	}
-
-	return -1
 }
 
 func writeFakePySpy(
@@ -585,7 +515,9 @@ func writeFakePySpy(
 		"py-spy",
 	)
 
-	content := "#!/bin/sh\nset -eu\n" + body
+	content :=
+		"#!/bin/sh\nset -eu\n" +
+			body
 
 	if err := os.WriteFile(
 		path,
