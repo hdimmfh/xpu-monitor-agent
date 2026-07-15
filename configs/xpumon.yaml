@@ -7,6 +7,3 @@ profiling:
     sample_rate: 20
     format: raw
     native: false
-
-  storage:
-    directory: ./profiles
