@@ -418,6 +418,20 @@ func buildProfileRequest(
 		)
 	}
 
+	if durationOverride < 0 {
+		return coreprofiler.Request{}, fmt.Errorf(
+			"profile duration override must not be negative: %s",
+			durationOverride,
+		)
+	}
+
+	if rateOverride < 0 {
+		return coreprofiler.Request{}, fmt.Errorf(
+			"profile sample rate override must not be negative: %d",
+			rateOverride,
+		)
+	}
+
 	request := coreprofiler.Request{
 		Mode: cfg.Profiling.PySpy.Mode,
 		Target: coreprofiler.Target{
@@ -442,6 +456,7 @@ func buildProfileRequest(
 			err,
 		)
 	}
+
 	if durationOverride > 0 {
 		duration = durationOverride
 	}
