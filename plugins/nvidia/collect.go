@@ -30,11 +30,11 @@ func (p *Plugin) Collect(
 	now := time.Now()
 
 	// Maximum expected metric count:
-	//   utilization: 2
-	//   memory:      3
-	//   temperature: 1
-	//   power:       1
-	metrics := make([]plugin.Metric, 0, 7)
+	// utilization: 2
+	// memory: 4
+	// temperature: 1
+	// power: 1
+	metrics := make([]plugin.Metric, 0, 8)
 
 	if err := collectUtilization(
 		ctx,
