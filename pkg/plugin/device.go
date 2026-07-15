@@ -1,9 +1,9 @@
-// pkg/plugin/device.go
 package plugin
 
 type DeviceType string
 
 const (
+	DeviceTypeHost DeviceType = "host"
 	DeviceTypeGPU  DeviceType = "gpu"
 	DeviceTypeXPU  DeviceType = "xpu"
 	DeviceTypeNPU  DeviceType = "npu"

@@ -2,6 +2,8 @@ package collector
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/hdimmfh/xpu-monitor-agent/pkg/plugin"
 )
@@ -10,45 +12,94 @@ type Collector struct {
 	plugins []plugin.Plugin
 }
 
-func New(plugins ...plugin.Plugin) *Collector {
+func New(
+	plugins ...plugin.Plugin,
+) *Collector {
 	return &Collector{
 		plugins: plugins,
 	}
 }
 
-func (c *Collector) DiscoverAll(ctx context.Context) ([]plugin.Device, error) {
+func (c *Collector) DiscoverAll(
+	ctx context.Context,
+) ([]plugin.Device, error) {
 	var devices []plugin.Device
+	var discoveryErrors []error
 
 	for _, p := range c.plugins {
 		discovered, err := p.Discover(ctx)
 		if err != nil {
-			return nil, err
+			discoveryErrors = append(
+				discoveryErrors,
+				fmt.Errorf(
+					"discover devices with plugin %q: %w",
+					p.Name(),
+					err,
+				),
+			)
+
+			continue
 		}
 
-		devices = append(devices, discovered...)
+		devices = append(
+			devices,
+			discovered...,
+		)
 	}
 
-	return devices, nil
+	return devices, errors.Join(
+		discoveryErrors...,
+	)
 }
 
-func (c *Collector) CollectAll(ctx context.Context) ([]plugin.Metric, error) {
+func (c *Collector) CollectAll(
+	ctx context.Context,
+) ([]plugin.Metric, error) {
 	var metrics []plugin.Metric
+	var collectionErrors []error
 
 	for _, p := range c.plugins {
 		devices, err := p.Discover(ctx)
 		if err != nil {
-			return nil, err
+			collectionErrors = append(
+				collectionErrors,
+				fmt.Errorf(
+					"discover devices with plugin %q: %w",
+					p.Name(),
+					err,
+				),
+			)
+
+			continue
 		}
 
 		for _, device := range devices {
-			collected, err := p.Collect(ctx, device.ID)
+			collected, err := p.Collect(
+				ctx,
+				device.ID,
+			)
 			if err != nil {
-				return nil, err
+				collectionErrors = append(
+					collectionErrors,
+					fmt.Errorf(
+						"collect device %q with plugin %q: %w",
+						device.ID,
+						p.Name(),
+						err,
+					),
+				)
+
+				continue
 			}
 
-			metrics = append(metrics, collected...)
+			metrics = append(
+				metrics,
+				collected...,
+			)
 		}
 	}
 
-	return metrics, nil
+	return metrics, errors.Join(
+		collectionErrors...,
+	)
 }

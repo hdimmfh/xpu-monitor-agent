@@ -1,4 +1,3 @@
-// pkg/plugin/plugin.go
 package plugin
 
 import "context"

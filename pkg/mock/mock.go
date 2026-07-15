@@ -1,4 +1,3 @@
-// plugins/mock/mock.go
 package mock
 
 import (
@@ -67,10 +66,34 @@ func (p *Plugin) Collect(ctx context.Context, deviceID string) ([]plugin.Metric,
 	now := time.Now()
 
 	return []plugin.Metric{
-		{Name: "temperature", Value: 65.0, Unit: "celsius", Timestamp: now},
-		{Name: "power", Value: 180.0, Unit: "watt", Timestamp: now},
-		{Name: "memory_used", Value: 4096.0, Unit: "MiB", Timestamp: now},
-		{Name: "utilization", Value: 72.5, Unit: "percent", Timestamp: now},
+		{
+			DeviceID:  deviceID,
+			Name:      "temperature",
+			Value:     65.0,
+			Unit:      "celsius",
+			Timestamp: now,
+		},
+		{
+			DeviceID:  deviceID,
+			Name:      "power",
+			Value:     180.0,
+			Unit:      "watt",
+			Timestamp: now,
+		},
+		{
+			DeviceID:  deviceID,
+			Name:      "memory_used",
+			Value:     uint64(4 * 1024 * 1024 * 1024),
+			Unit:      "byte",
+			Timestamp: now,
+		},
+		{
+			DeviceID:  deviceID,
+			Name:      "gpu_utilization",
+			Value:     72.5,
+			Unit:      "percent",
+			Timestamp: now,
+		},
 	}, nil
 }
 
