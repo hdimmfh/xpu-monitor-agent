@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+
 	"github.com/hdimmfh/xpu-monitor-agent/pkg/plugin"
 )
 
@@ -27,7 +28,13 @@ func (p *Plugin) Collect(
 	}
 
 	now := time.Now()
-	metrics := make([]plugin.Metric, 0, 6)
+
+	// Maximum expected metric count:
+	//   utilization: 2
+	//   memory:      3
+	//   temperature: 1
+	//   power:       1
+	metrics := make([]plugin.Metric, 0, 7)
 
 	if err := collectUtilization(
 		ctx,
@@ -39,6 +46,10 @@ func (p *Plugin) Collect(
 		return nil, err
 	}
 
+	// collectMemory is implemented in memory.go.
+	//
+	// Dedicated-memory devices use NVML memory information.
+	// UMA devices can fall back to unified system memory collection.
 	if err := collectMemory(
 		ctx,
 		device,
@@ -119,55 +130,6 @@ func collectUtilization(
 	}
 }
 
-func collectMemory(
-	ctx context.Context,
-	device nvml.Device,
-	deviceID string,
-	timestamp time.Time,
-	metrics *[]plugin.Metric,
-) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	memory, ret := device.GetMemoryInfo()
-
-	switch ret {
-	case nvml.SUCCESS:
-		*metrics = append(
-			*metrics,
-			plugin.Metric{
-				DeviceID:  deviceID,
-				Name:      "memory_used",
-				Value:     memory.Used,
-				Unit:      "byte",
-				Timestamp: timestamp,
-			},
-			plugin.Metric{
-				DeviceID:  deviceID,
-				Name:      "memory_total",
-				Value:     memory.Total,
-				Unit:      "byte",
-				Timestamp: timestamp,
-			},
-		)
-
-		return nil
-
-	case nvml.ERROR_NOT_SUPPORTED:
-		// UMA devices such as DGX Spark may not expose dedicated
-		// GPU memory metrics through NVML.
-		return nil
-
-	default:
-		return fmt.Errorf(
-			"get memory info for NVIDIA device %q: %s",
-			deviceID,
-			nvml.ErrorString(ret),
-		)
-	}
-}
-
 func collectTemperature(
 	ctx context.Context,
 	device nvml.Device,
@@ -228,10 +190,9 @@ func collectPower(
 		*metrics = append(
 			*metrics,
 			plugin.Metric{
-				DeviceID: deviceID,
-				Name:     "power",
-				Value: float64(powerMilliwatts) /
-					1000.0,
+				DeviceID:  deviceID,
+				Name:      "power",
+				Value:     float64(powerMilliwatts) / 1000.0,
 				Unit:      "watt",
 				Timestamp: timestamp,
 			},
