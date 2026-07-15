@@ -3,37 +3,40 @@ package profiler
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the root XPUMON profiler configuration.
+const (
+	ModeDump   = "dump"
+	ModeRecord = "record"
+)
+
 type Config struct {
 	Profiling ProfilingConfig `yaml:"profiling"`
 }
 
-// ProfilingConfig controls whether profiling is enabled and configures
-// the concrete profiler implementation.
 type ProfilingConfig struct {
 	Enabled bool        `yaml:"enabled"`
 	PySpy   PySpyConfig `yaml:"pyspy"`
+	Storage StorageConfig `yaml:"storage"`
 }
 
-// PySpyConfig defines the default py-spy execution options.
-//
-// These values may later be overridden by CLI flags or API request
-// parameters.
 type PySpyConfig struct {
 	Binary     string `yaml:"binary"`
+	Mode       string `yaml:"mode"`
 	Duration   string `yaml:"duration"`
 	SampleRate int    `yaml:"sample_rate"`
 	Format     string `yaml:"format"`
 	Native     bool   `yaml:"native"`
 }
 
-// LoadConfig reads, applies defaults to, and validates a profiler
-// configuration file.
+type StorageConfig struct {
+	Directory string `yaml:"directory"`
+}
+
 func LoadConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -45,6 +48,7 @@ func LoadConfig(path string) (Config, error) {
 	}
 
 	var cfg Config
+
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf(
 			"unmarshal profiler config %q: %w",
@@ -66,10 +70,19 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func applyDefaults(cfg *Config) {
-	if cfg.Profiling.PySpy.Binary == "" {
+	if strings.TrimSpace(
+		cfg.Profiling.PySpy.Binary,
+	) == "" {
 		cfg.Profiling.PySpy.Binary = "py-spy"
 	}
 
+	if strings.TrimSpace(
+		cfg.Profiling.PySpy.Mode,
+	) == "" {
+		cfg.Profiling.PySpy.Mode = ModeDump
+	}
+
+	// 아래 값은 record 모드에서만 사용한다.
 	if cfg.Profiling.PySpy.Duration == "" {
 		cfg.Profiling.PySpy.Duration = "10s"
 	}
@@ -81,14 +94,34 @@ func applyDefaults(cfg *Config) {
 	if cfg.Profiling.PySpy.Format == "" {
 		cfg.Profiling.PySpy.Format = "raw"
 	}
+
+	if cfg.Profiling.Storage.Directory == "" {
+		cfg.Profiling.Storage.Directory = "./profiles"
+	}
 }
 
-// Validate checks enabled profiler settings.
 func (c Config) Validate() error {
 	if !c.Profiling.Enabled {
 		return nil
 	}
 
+	switch c.Profiling.PySpy.Mode {
+	case ModeDump:
+		// dump에는 PID와 native 설정만 필요하다.
+		return nil
+
+	case ModeRecord:
+		return c.validateRecordConfig()
+
+	default:
+		return fmt.Errorf(
+			"unsupported profiling.pyspy.mode %q",
+			c.Profiling.PySpy.Mode,
+		)
+	}
+}
+
+func (c Config) validateRecordConfig() error {
 	duration, err := time.ParseDuration(
 		c.Profiling.PySpy.Duration,
 	)
@@ -113,18 +146,26 @@ func (c Config) Validate() error {
 	}
 
 	switch c.Profiling.PySpy.Format {
-	case "raw", "flamegraph", "speedscope", "chrometrace":
+	case "raw",
+		"flamegraph",
+		"speedscope",
+		"chrometrace":
+
+		return nil
+
 	default:
 		return fmt.Errorf(
 			"unsupported profiling.pyspy.format %q",
 			c.Profiling.PySpy.Format,
 		)
 	}
-
-	return nil
 }
 
-// Duration returns the configured py-spy duration.
-func (c Config) Duration() (time.Duration, error) {
-	return time.ParseDuration(c.Profiling.PySpy.Duration)
+func (c Config) Duration() (
+	time.Duration,
+	error,
+) {
+	return time.ParseDuration(
+		c.Profiling.PySpy.Duration,
+	)
 }
