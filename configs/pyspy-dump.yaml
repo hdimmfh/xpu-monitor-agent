@@ -1,0 +1,7 @@
+profiling:
+  enabled: true
+
+  pyspy:
+    binary: py-spy
+    mode: dump
+    native: false
