@@ -25,10 +25,10 @@ Implemented and planned plugins use the same core interface.
 
 A plugin may represent:
 
-- A host system
-- A hardware accelerator vendor
-- A simulated device source
-- Another telemetry provider compatible with the shared models
+* A host system
+* A hardware accelerator vendor
+* A simulated device source
+* Another telemetry provider compatible with the shared models
 
 ---
 
@@ -36,10 +36,10 @@ A plugin may represent:
 
 The shared plugin package defines:
 
-- The `Plugin` interface
-- `Device`
-- `Capability`
-- `Metric`
+* The `Plugin` interface
+* `Device`
+* `Capability`
+* `Metric`
 
 Vendor packages implement these definitions.
 
@@ -59,10 +59,10 @@ The collector imports the shared plugin package.
 
 The collector should not import:
 
-- NVIDIA NVML
-- AMD SMI
-- Intel Level Zero
-- Another vendor-specific device SDK
+* NVIDIA NVML
+* AMD SMI
+* Intel Level Zero
+* Another vendor-specific device SDK
 
 ---
 
@@ -77,12 +77,12 @@ type Plugin interface {
 }
 ```
 
-| Method | Purpose |
-|---|---|
-| `Name()` | Returns a stable human-readable plugin name |
-| `Discover()` | Discovers every device managed by the plugin |
+| Method           | Purpose                                                |
+| ---------------- | ------------------------------------------------------ |
+| `Name()`         | Returns a stable human-readable plugin name            |
+| `Discover()`     | Discovers every device managed by the plugin           |
 | `Capabilities()` | Returns telemetry capabilities supported by one device |
-| `Collect()` | Collects current telemetry from one device |
+| `Collect()`      | Collects current telemetry from one device             |
 
 ---
 
@@ -106,10 +106,10 @@ nvidia
 
 The name should:
 
-- Be stable between executions
-- Be concise
-- Not depend on a discovered device
-- Distinguish the plugin implementation from other plugins
+* Be stable between executions
+* Be concise
+* Not depend on a discovered device
+* Distinguish the plugin implementation from other plugins
 
 The plugin name is not the same as a device ID.
 
@@ -127,9 +127,9 @@ Discover(ctx context.Context) ([]Device, error)
 
 Examples:
 
-- The host plugin may return one host device.
-- The NVIDIA plugin may return every GPU visible through NVML.
-- A mock plugin may return a configured set of test devices.
+* The host plugin may return one host device.
+* The NVIDIA plugin may return every GPU visible through NVML.
+* A mock plugin may return a configured set of test devices.
 
 The collector must iterate over every returned device.
 
@@ -188,13 +188,13 @@ Not every device supports the same measurements.
 
 Example capability matrix:
 
-| Device | Example capabilities |
-|---|---|
-| Host | CPU, memory |
-| NVIDIA GPU | temperature, power, memory, utilization, ECC |
-| AMD GPU | temperature, power, memory, utilization |
-| FPGA | temperature, power |
-| Future ASIC | implementation-specific |
+| Device      | Example capabilities                         |
+| ----------- | -------------------------------------------- |
+| Host        | CPU, memory                                  |
+| NVIDIA GPU  | temperature, power, memory, utilization, ECC |
+| AMD GPU     | temperature, power, memory, utilization      |
+| FPGA        | temperature, power                           |
+| Future ASIC | Implementation-specific                      |
 
 A capability should represent a telemetry category rather than an individual sample.
 
@@ -262,11 +262,11 @@ The plugin may skip unsupported metrics while returning the supported measuremen
 
 Fatal failures include cases such as:
 
-- Invalid device ID
-- Vendor SDK initialization failure
-- Lost device handle
-- Context cancellation
-- Corrupted or unusable SDK state
+* Invalid device ID
+* Vendor SDK initialization failure
+* Lost device handle
+* Context cancellation
+* Corrupted or unusable SDK state
 
 The distinction between unsupported and fatal conditions should be explicit in plugin code.
 
@@ -368,11 +368,11 @@ func collectPlugin(
 
 The final implementation may choose to:
 
-- Continue when one device fails
-- Collect devices concurrently
-- Record per-device errors
-- Cache capabilities
-- Periodically rediscover devices
+* Continue when one device fails
+* Collect devices concurrently
+* Record per-device errors
+* Cache capabilities
+* Periodically rediscover devices
 
 Those policies belong in the collector rather than the shared plugin interface.
 
@@ -469,10 +469,10 @@ Capability
 
 Capability names should:
 
-- Be lowercase
-- Be vendor-neutral where practical
-- Represent a category of telemetry
-- Remain stable after introduction
+* Be lowercase
+* Be vendor-neutral where practical
+* Represent a category of telemetry
+* Remain stable after introduction
 
 Examples:
 
@@ -519,10 +519,10 @@ Metric
 
 Common metric names should be:
 
-- Lowercase
-- Snake case
-- Stable
-- Independent of vendor branding where equivalent semantics exist
+* Lowercase
+* Snake case
+* Stable
+* Independent of vendor branding where equivalent semantics exist
 
 Examples:
 
@@ -594,13 +594,13 @@ The NVIDIA plugin should isolate all NVML-specific logic inside `plugins/nvidia`
 
 Responsibilities include:
 
-- NVML initialization
-- Device enumeration
-- Device handle lookup
-- Device UUID and model retrieval
-- Capability declaration
-- Metric collection
-- NVML return-code handling
+* NVML initialization
+* Device enumeration
+* Device handle lookup
+* Device UUID and model retrieval
+* Capability declaration
+* Metric collection
+* NVML return-code handling
 
 The shared collector should not receive raw NVML handles or NVML return codes.
 
@@ -685,10 +685,10 @@ NVML error
 
 Vendor errors should be translated or wrapped so callers can understand:
 
-- Which plugin failed
-- Which device failed
-- Which operation failed
-- Whether the error is retryable or unsupported
+* Which plugin failed
+* Which device failed
+* Which operation failed
+* Whether the error is retryable or unsupported
 
 Do not treat context cancellation as a vendor error.
 
@@ -708,11 +708,11 @@ When a plugin keeps mutable state, it must document or enforce its concurrency g
 
 Potential approaches include:
 
-- Stateless collection
-- Per-device locks
-- A plugin-wide mutex
-- Immutable device-handle mappings
-- Collector-controlled serialization
+* Stateless collection
+* Per-device locks
+* A plugin-wide mutex
+* Immutable device-handle mappings
+* Collector-controlled serialization
 
 Vendor SDK thread-safety requirements must be respected by the plugin implementation.
 
@@ -722,19 +722,19 @@ Vendor SDK thread-safety requirements must be respected by the plugin implementa
 
 Every plugin should include tests for:
 
-- Plugin name
-- Device discovery
-- Multiple-device discovery
-- Device type
-- Capability reporting
-- Metric device IDs
-- Metric names
-- Metric units
-- Timestamp population
-- Invalid device IDs
-- Context cancellation
-- Unsupported telemetry
-- Vendor API failures where mockable
+* Plugin name
+* Device discovery
+* Multiple-device discovery
+* Device type
+* Capability reporting
+* Metric device IDs
+* Metric names
+* Metric units
+* Timestamp population
+* Invalid device IDs
+* Context cancellation
+* Unsupported telemetry
+* Vendor API failures where mockable
 
 Run the complete test suite with:
 
@@ -849,7 +849,36 @@ Add the vendor SDK only to the plugin package.
 
 Do not expose vendor-specific types through:
 
-- `plugin.Device`
-- `plugin.Capability`
-- `plugin.Metric`
-- Collector APIs
+* `plugin.Device`
+* `plugin.Capability`
+* `plugin.Metric`
+* Collector APIs
+
+### 4. Register the Plugin
+
+Register the implementation in the CLI or plugin registry used by the application.
+
+### 5. Add Tests
+
+Use a mockable wrapper when direct hardware access is not suitable for unit tests.
+
+Hardware validation tests should be clearly separated from deterministic unit tests.
+
+---
+
+## Design Rules
+
+Plugin implementations should follow these rules:
+
+1. Keep the core framework vendor-neutral.
+2. Depend on the shared plugin models.
+3. Isolate vendor SDKs inside plugin packages.
+4. Return every discovered device.
+5. Do not assume one plugin manages only one device.
+6. Use stable device IDs where available.
+7. Use consistent common metric names and units.
+8. Check context cancellation.
+9. Distinguish unsupported telemetry from fatal failures.
+10. Attach the requested device ID to every returned metric.
+11. Avoid exposing vendor handles to the collector.
+12. Add package-level tests for every implementation.
