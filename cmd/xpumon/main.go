@@ -241,22 +241,6 @@ func runProfile(
 		)
 	}
 
-	request, err := buildProfileRequest(
-		cfg,
-		*pid,
-		*deviceID,
-		*containerID,
-		*jobID,
-		*command,
-		*durationOverride,
-		*rateOverride,
-		*formatOverride,
-		*nativeOverride,
-	)
-	if err != nil {
-		return err
-	}
-
 	p, err := pyspy.New(
 		pyspy.Config{
 			BinaryPath:
