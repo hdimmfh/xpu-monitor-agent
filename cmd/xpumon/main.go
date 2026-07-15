@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/hdimmfh/xpu-monitor-agent/pkg/collector"
+	"github.com/hdimmfh/xpu-monitor-agent/plugins/host"
 	"github.com/hdimmfh/xpu-monitor-agent/plugins/nvidia"
 )
 
@@ -27,7 +28,12 @@ func main() {
 		}
 	}()
 
-	c := collector.New(nvidiaPlugin)
+	hostPlugin := host.New()
+
+	c := collector.New(
+		hostPlugin,
+		nvidiaPlugin,
+	)
 
 	metrics, err := c.CollectAll(
 		context.Background(),
