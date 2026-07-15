@@ -1,8 +1,17 @@
 # Plugin API
 
+## Overview
+
 XPUMON uses a vendor-neutral plugin architecture.
 
-Each hardware vendor implements the same `Plugin` interface while the core framework remains independent of vendor-specific SDKs.
+Each telemetry source is implemented as a plugin while vendor-specific dependencies remain isolated from the core framework.
+
+Current plugins include:
+
+- Host
+- NVIDIA (NVML)
+
+The same interface can be implemented for future accelerator vendors such as AMD or Intel.
 
 ---
 
@@ -10,101 +19,64 @@ Each hardware vendor implements the same `Plugin` interface while the core frame
 
 ```mermaid
 flowchart LR
-
     Collector["Collector"] --> Plugin["plugin.Plugin"]
 
-    Mock["Mock Plugin"] -.implements.-> Plugin
+    Host["Host Plugin"] -.implements.-> Plugin
     NVIDIA["NVIDIA Plugin"] -.implements.-> Plugin
-    AMD["AMD Plugin"] -.implements.-> Plugin
-    Intel["Intel Plugin"] -.implements.-> Plugin
-    Future["Future ASIC Plugin"] -.implements.-> Plugin
-```
-
----
-
-## Plugin Lifecycle
-
-```mermaid
-flowchart LR
-
-    Discover["Discover()"]
-    Capabilities["Capabilities()"]
-    Collect["Collect()"]
-
-    Discover --> Capabilities --> Collect
+    Future["Future Plugins"] -.implements.-> Plugin
 ```
 
 ---
 
 ## Plugin Interface
 
+Every plugin implements the following interface.
+
 ```go
 type Plugin interface {
     Name() string
-
     Discover(ctx context.Context) ([]Device, error)
-
     Capabilities(ctx context.Context, deviceID string) ([]Capability, error)
-
     Collect(ctx context.Context, deviceID string) ([]Metric, error)
 }
 ```
 
-| Method | Purpose |
-|---------|---------|
-| `Name()` | Returns the plugin name. |
-| `Discover()` | Discovers all accelerator devices managed by the plugin. |
-| `Capabilities()` | Returns the telemetry features supported by a device. |
-| `Collect()` | Collects telemetry metrics from a device. |
+| Method | Description |
+|----------|-------------|
+| `Name()` | Returns the plugin name |
+| `Discover()` | Discovers supported devices |
+| `Capabilities()` | Returns capabilities of a device |
+| `Collect()` | Collects metrics for a device |
 
 ---
 
-## Why `Capabilities()`?
-
-Not every accelerator supports the same telemetry.
-
-For example:
-
-| Device | Supported Capabilities |
-|---------|------------------------|
-| NVIDIA GPU | temperature, power, memory, utilization, ECC |
-| AMD GPU | temperature, power, memory, utilization |
-| FPGA | temperature, power |
-| Future ASIC | temperature |
-
-Before collecting metrics, the collector can determine what a device is capable of exposing.
-
-Typical workflow:
+## Collection Flow
 
 ```mermaid
-flowchart TD
-
-    Collector["Collector"]
-
-    Discover["Discover()"]
-
-    Device["Device"]
-
-    Capabilities["Capabilities()"]
-
-    Collect["Collect()"]
-
-    Metric["Metric"]
-
-    Collector --> Discover
-    Discover --> Device
-
-    Device --> Capabilities
-    Device --> Collect
-
-    Collect --> Metric
+flowchart LR
+    Discover --> Devices
+    Devices --> Capabilities
+    Capabilities --> Collect
+    Collect --> Metrics
 ```
 
-This keeps the collector independent of vendor-specific features while allowing each plugin to expose different telemetry capabilities.
+The collector performs the following steps:
+
+1. Discover devices.
+2. Query supported capabilities.
+3. Collect metrics for each device.
+
+A plugin may return zero, one, or multiple devices.
 
 ---
 
 ## Shared Data Models
+
+### Device
+
+Represents a host or accelerator.
+
+Typical fields include:
 
 ```text
 Device
@@ -112,10 +84,29 @@ Device
 ├── Vendor
 ├── Model
 └── Type
+```
 
-Capability
-└── Name
+---
 
+### Capability
+
+Represents a telemetry category supported by a device.
+
+Examples:
+
+- memory
+- utilization
+- temperature
+- power
+- ecc
+
+---
+
+### Metric
+
+Represents a timestamped measurement.
+
+```text
 Metric
 ├── DeviceID
 ├── Name
@@ -124,12 +115,83 @@ Metric
 └── Timestamp
 ```
 
+Example:
+
+```go
+plugin.Metric{
+    DeviceID: deviceID,
+    Name: "memory_used",
+    Value: memoryUsed,
+    Unit: "byte",
+    Timestamp: timestamp,
+}
+```
+
+---
+
+## Plugin Guidelines
+
+Plugins should:
+
+- Keep vendor SDKs inside the plugin package.
+- Return all discovered devices.
+- Support multiple devices.
+- Use stable device identifiers whenever possible.
+- Use common metric names and units.
+- Respect `context.Context`.
+- Distinguish unsupported telemetry from fatal errors.
+
+The collector should never depend directly on vendor SDKs such as NVML.
+
+---
+
+## Package Layout
+
+```text
+pkg/plugin
+├── plugin.go
+├── device.go
+├── capability.go
+└── metric.go
+
+plugins/
+├── host/
+└── nvidia/
+```
+
+Vendor SDKs should remain inside the corresponding plugin package.
+
+---
+
+## Adding a New Plugin
+
+1. Create a new package under `plugins/`.
+2. Implement the `Plugin` interface.
+3. Use the shared data models.
+4. Register the plugin with the collector.
+5. Add unit tests.
+
+Example:
+
+```go
+type Plugin struct{}
+
+var _ plugin.Plugin = (*Plugin)(nil)
+
+func (p *Plugin) Name() string {
+    return "example"
+}
+```
+
 ---
 
 ## Design Principles
 
-- Keep the core framework vendor-neutral.
-- Depend only on the `Plugin` interface.
-- Isolate vendor SDKs inside plugin implementations.
-- Support different telemetry capabilities for different hardware.
-- Allow new vendors to be added without modifying the core framework.
+XPUMON plugins follow a few simple principles:
+
+- Vendor-neutral interfaces
+- Shared data models
+- Capability-based telemetry
+- Multi-device support
+- Extensible architecture
+- Clear separation between the collector and vendor implementations

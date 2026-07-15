@@ -1,193 +1,178 @@
-# XPUMON Overview
+# Project Overview
 
 ## Introduction
 
-XPUMON is a vendor-neutral monitoring framework for heterogeneous AI accelerators.
+XPUMON is a vendor-neutral monitoring and profiling framework for heterogeneous AI infrastructure.
 
-Unlike existing monitoring solutions that are tightly coupled to a single hardware vendor, XPUMON provides a unified telemetry model for GPUs, XPUs, NPUs, DPUs, FPGAs, and future AI ASICs through a plugin-based architecture.
+Modern AI systems commonly combine CPUs with multiple accelerator types such as GPUs, NPUs, XPUs, and other specialized devices. Each vendor exposes different management APIs, metric definitions, and capabilities, making it difficult to build a unified monitoring solution.
 
-The project is inspired by NVIDIA DCGM and AMD ROCm Systems, but its objective is not to replace vendor-specific management libraries. Instead, XPUMON provides a common abstraction layer that allows heterogeneous accelerator devices to expose telemetry using a consistent interface.
-
----
-
-## Vision
-
-Modern AI infrastructure is becoming increasingly heterogeneous.
-
-A single cluster may contain accelerators from multiple vendors, each exposing different management APIs, telemetry formats, and monitoring capabilities.
-
-XPUMON aims to eliminate these differences by introducing a common monitoring framework that:
-
-* Discovers accelerator devices automatically
-* Normalizes telemetry into a unified metric model
-* Supports multiple hardware vendors through plugins
-* Integrates with existing observability platforms
-* Remains extensible for future accelerator architectures
+XPUMON provides a common plugin interface that abstracts vendor-specific implementations while exposing a unified model for devices, capabilities, metrics, and workload profiling.
 
 ---
 
 ## Goals
 
-### Primary Goals
+XPUMON is designed to:
 
-* Support heterogeneous accelerator devices
-* Provide a vendor-neutral monitoring interface
-* Normalize hardware telemetry across vendors
-* Enable easy integration with Prometheus and OpenTelemetry
-* Allow third parties to develop device plugins without modifying the core framework
-
-### Long-term Goals
-
-* Support future AI ASICs without redesigning the core architecture
-* Provide health diagnostics and event monitoring
-* Offer Kubernetes-native deployment
-* Become a common monitoring layer for heterogeneous AI infrastructure
+- Provide a vendor-neutral monitoring framework
+- Support heterogeneous accelerator environments
+- Discover devices dynamically
+- Collect host and accelerator telemetry through a common interface
+- Support workload-level profiling for Python applications
+- Remain extensible through a plugin architecture
+- Enable future integration with standard observability systems
 
 ---
 
-## Non-Goals
+## Architecture
 
-XPUMON is **not** intended to:
+XPUMON separates vendor-specific implementations from the core framework.
 
-* Replace vendor management libraries such as DCGM or AMD SMI
-* Control accelerator hardware (clock tuning, power limits, firmware updates, etc.)
-* Implement device-specific optimization features
+```mermaid
+flowchart LR
+    Host["Host Plugin"]
+    NVIDIA["NVIDIA Plugin"]
+    Future["Future Plugins"]
 
-Those responsibilities remain with vendor-specific software stacks.
+    Host --> Core["XPUMON Core"]
+    NVIDIA --> Core
+    Future --> Core
+
+    Core --> Metrics["Metrics"]
+    Core --> Profiling["Profiling"]
+```
+
+Every telemetry source implements the same plugin interface, allowing new hardware vendors to be supported without changing the core collection workflow.
+
+---
+
+## Core Components
+
+### Core Framework
+
+Responsible for:
+
+- Configuration
+- Device discovery
+- Metric collection
+- Profile execution
+- Shared data models
+
+### Plugins
+
+Plugins encapsulate vendor-specific logic.
+
+Current implementations:
+
+- Host plugin
+- NVIDIA NVML plugin
+
+Future implementations may include:
+
+- AMD
+- Intel
+- Additional accelerator vendors
+
+### Profiler
+
+XPUMON integrates with `py-spy` to profile Python workloads.
+
+Supported modes include:
+
+- `dump` for stack snapshots
+- `record` for sampling profiles
+
+---
+
+## Data Model
+
+The framework uses common data models shared across all plugins.
+
+### Device
+
+Represents a discoverable hardware or host resource.
+
+### Capability
+
+Describes telemetry supported by a device.
+
+Examples include:
+
+- Memory
+- Power
+- Temperature
+- Utilization
+
+### Metric
+
+Represents a timestamped measurement collected from a device.
 
 ---
 
 ## Design Principles
 
-XPUMON follows several core principles.
-
 ### Vendor Neutrality
 
-The core framework must not depend on a specific hardware vendor.
+Vendor SDKs remain isolated inside plugin implementations.
 
-All vendor-specific functionality must be isolated within plugins.
+The core framework depends only on shared interfaces and data models.
 
-### Capability-Based Design
+### Plugin-Based Architecture
 
-Devices are identified by their capabilities rather than by vendor-specific implementations.
+Each telemetry source is implemented as a plugin.
 
-Examples include:
+This allows new hardware vendors to be added without modifying the collector itself.
 
-* Temperature
-* Power
-* Memory
-* Utilization
-* Health
-* Fabric
-* ECC
+### Capability-Based Collection
 
-New capabilities should be extendable without changing the core architecture.
+Plugins advertise supported capabilities before metrics are collected, allowing devices with different feature sets to coexist under the same framework.
 
-### Plugin Extensibility
+### Separation of Monitoring and Profiling
 
-Every supported accelerator is implemented as a plugin.
-
-The core framework should not require modifications when supporting a new vendor or future ASIC.
-
-### Standardized Metrics
-
-Telemetry collected from different vendors should be normalized into a common metric schema.
-
-Vendor-specific metrics may be exposed as optional extensions.
-
-### Cloud-Native Integration
-
-XPUMON should integrate naturally with modern observability ecosystems, including:
-
-* Prometheus
-* OpenTelemetry
-* Grafana
-* Datadog
-* Kubernetes
-
----
-## High-Level Architecture
-
-### AS-IS: Vendor-Specific Monitoring
-
-```mermaid
-flowchart BT
-    OBS["Observability Stack<br/>• Prometheus<br/>• OpenTelemetry<br/>• Grafana"]
-
-    NVIDIA_EXPORTER["NVIDIA Metric Exporter<br/>• DCGM Exporter"]
-    AMD_EXPORTER["AMD Metric Exporter<br/>• ROCm Systems / AMD SMI Exporter"]
-    INTEL_EXPORTER["Intel Metric Exporter<br/>• Level Zero / XPU Exporter"]
-    ASIC_EXPORTER["Future ASIC Metric Exporter<br/>• Vendor-Specific Exporter"]
-
-    NVIDIA["NVIDIA GPU"]
-    AMD["AMD GPU"]
-    INTEL["Intel XPU"]
-    ASIC["Future ASIC"]
-
-    NVIDIA --> NVIDIA_EXPORTER
-    AMD --> AMD_EXPORTER
-    INTEL --> INTEL_EXPORTER
-    ASIC --> ASIC_EXPORTER
-
-    NVIDIA_EXPORTER --> OBS
-    AMD_EXPORTER --> OBS
-    INTEL_EXPORTER --> OBS
-    ASIC_EXPORTER --> OBS
-```
-
-### TO-BE: XPUMON Unified Monitoring
-
-```mermaid
-flowchart BT
-    OBS["Observability Stack<br/>• Prometheus<br/>• OpenTelemetry<br/>• Grafana"]
-
-    EXPORTER["Telemetry Exporter"]
-
-    CORE["XPUMON Core<br/>• Device Discovery<br/>• Capability Discovery<br/>• Metric Normalization<br/>• Plugin Runtime"]
-
-    NVIDIA["NVIDIA Plugin(NVML)"]
-    AMD["AMD Plugin(ROCm Systems)"]
-    INTEL["Intel Plugin"]
-    ASIC["Future ASIC Plugin"]
-
-    NVIDIA --> CORE
-    AMD --> CORE
-    INTEL --> CORE
-    ASIC --> CORE
-
-    CORE --> EXPORTER
-    EXPORTER --> OBS
-```
-### Comparison
-
-| Area | AS-IS | TO-BE |
-|---|---|---|
-| Architecture | Vendor-specific exporters | Unified core with vendor plugins |
-| Metric model | Different per vendor | Normalized common schema |
-| Extensibility | New exporter required per device type | New plugin only |
-| Future ASIC support | Depends on each vendor implementation | Supported through plugin interface |
-| Observability integration | Repeated integration per exporter | Single exporter layer |
-| Maintenance | Fragmented | Centralized core, isolated plugins |
-
----
-
-## Benchmark Projects
-
-The following projects serve as architectural references:
-
-* NVIDIA DCGM
-* AMD ROCm Systems
-
-XPUMON adopts architectural concepts from these projects while remaining independent and vendor-neutral.
+Device telemetry and workload profiling are implemented independently while sharing common metadata such as process and device information.
 
 ---
 
 ## Current Status
 
-Current development phase:
+Implemented:
 
-- Architecture design
-- Plugin interface specification
-- Unified metric schema definition
+- Vendor-neutral plugin interface
+- Host plugin
+- NVIDIA NVML plugin
+- Multi-device discovery
+- Host and GPU telemetry collection
+- Python process discovery
+- `py-spy dump` integration
+- `py-spy record` integration
 
-Implementation will begin after the architecture reaches its first stable revision.
+In progress:
+
+- Metric normalization
+- Prometheus exporter
+- OpenTelemetry exporter
+- Process-to-GPU correlation
+- Kubernetes integration
+- Additional accelerator plugins
+
+---
+
+## Roadmap
+
+Future work includes:
+
+- Additional accelerator plugins
+- Continuous profiling
+- Container and Kubernetes metadata
+- Unified metric naming
+- Process-to-device correlation
+- Exporters for Prometheus and OpenTelemetry
+- Stable public configuration schema
+
+---
+
+## Related Documents
+
+- [Plugin API](01-plugin-api.md)
+- Configuration Reference *(planned)*
+- Profiling Guide *(planned)*
