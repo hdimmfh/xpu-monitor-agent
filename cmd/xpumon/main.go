@@ -383,52 +383,64 @@ func buildProfileRequest(
 func printProfile(
 	profile coreprofiler.Profile,
 ) {
+	elapsed := profile.EndedAt.Sub(profile.StartedAt)
+
+	fmt.Println("================================================================================")
+	fmt.Println("PY-SPY PROFILE")
+	fmt.Println("================================================================================")
+
+	fmt.Printf("Profiler   : %s\n", profile.Profiler)
+	fmt.Printf("PID        : %d\n", profile.Target.PID)
+	fmt.Printf("Format     : %s\n", profile.Format)
 	fmt.Printf(
-		"profile=%s pid=%d format=%s started_at=%s ended_at=%s",
-		profile.Profiler,
-		profile.Target.PID,
-		profile.Format,
-		profile.StartedAt.Format(time.RFC3339Nano),
-		profile.EndedAt.Format(time.RFC3339Nano),
+		"Started    : %s\n",
+		profile.StartedAt.UTC().Format("2006-01-02 15:04:05.000 MST"),
+	)
+	fmt.Printf(
+		"Ended      : %s\n",
+		profile.EndedAt.UTC().Format("2006-01-02 15:04:05.000 MST"),
+	)
+	fmt.Printf(
+		"Elapsed    : %s\n",
+		elapsed.Round(time.Microsecond),
 	)
 
 	if profile.Target.Hostname != "" {
 		fmt.Printf(
-			" hostname=%q",
+			"Hostname   : %s\n",
 			profile.Target.Hostname,
 		)
 	}
 
 	if profile.Target.DeviceID != "" {
 		fmt.Printf(
-			" device=%q",
+			"Device     : %s\n",
 			profile.Target.DeviceID,
 		)
 	}
 
 	if profile.Target.ContainerID != "" {
 		fmt.Printf(
-			" container_id=%q",
+			"Container  : %s\n",
 			profile.Target.ContainerID,
 		)
 	}
 
 	if profile.Target.JobID != "" {
 		fmt.Printf(
-			" job_id=%q",
+			"Job ID     : %s\n",
 			profile.Target.JobID,
 		)
 	}
 
 	if profile.Target.Command != "" {
 		fmt.Printf(
-			" command=%q",
+			"Command    : %s\n",
 			profile.Target.Command,
 		)
 	}
 
-	fmt.Println()
-	fmt.Println("profile_data_begin")
+	fmt.Println("--------------------------------------------------------------------------------")
 
 	fmt.Print(
 		profile.Text(),
@@ -439,7 +451,8 @@ func printProfile(
 		fmt.Println()
 	}
 
-	fmt.Println("profile_data_end")
+	fmt.Println("================================================================================")
+	fmt.Println()
 }
 
 func printUsage() {
