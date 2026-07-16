@@ -11,6 +11,9 @@ import (
 )
 
 // Collect collects normalized telemetry from one NVIDIA GPU.
+//
+// Metrics unsupported by a specific NVIDIA device are skipped.
+// Other NVML errors are returned to the caller.
 func (p *Plugin) Collect(
 	ctx context.Context,
 	deviceID string,
@@ -26,104 +29,185 @@ func (p *Plugin) Collect(
 
 	now := time.Now()
 
-	metrics := make([]plugin.Metric, 0, 6)
+	// Maximum expected metric count:
+	// utilization: 2
+	// memory: 4
+	// temperature: 1
+	// power: 1
+	metrics := make([]plugin.Metric, 0, 8)
+
+	if err := collectUtilization(
+		ctx,
+		device,
+		deviceID,
+		now,
+		&metrics,
+	); err != nil {
+		return nil, err
+	}
+
+	// collectMemory is implemented in memory.go.
+	//
+	// Dedicated-memory devices use NVML memory information.
+	// UMA devices can fall back to unified system memory collection.
+	if err := collectMemory(
+		ctx,
+		device,
+		deviceID,
+		now,
+		&metrics,
+	); err != nil {
+		return nil, err
+	}
+
+	if err := collectTemperature(
+		ctx,
+		device,
+		deviceID,
+		now,
+		&metrics,
+	); err != nil {
+		return nil, err
+	}
+
+	if err := collectPower(
+		ctx,
+		device,
+		deviceID,
+		now,
+		&metrics,
+	); err != nil {
+		return nil, err
+	}
+
+	return metrics, nil
+}
+
+func collectUtilization(
+	ctx context.Context,
+	device nvml.Device,
+	deviceID string,
+	timestamp time.Time,
+	metrics *[]plugin.Metric,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	utilization, ret := device.GetUtilizationRates()
-	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf(
+
+	switch ret {
+	case nvml.SUCCESS:
+		*metrics = append(
+			*metrics,
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "gpu_utilization",
+				Value:     float64(utilization.Gpu),
+				Unit:      "percent",
+				Timestamp: timestamp,
+			},
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "memory_utilization",
+				Value:     float64(utilization.Memory),
+				Unit:      "percent",
+				Timestamp: timestamp,
+			},
+		)
+
+		return nil
+
+	case nvml.ERROR_NOT_SUPPORTED:
+		return nil
+
+	default:
+		return fmt.Errorf(
 			"get utilization for NVIDIA device %q: %s",
 			deviceID,
 			nvml.ErrorString(ret),
 		)
 	}
+}
 
-	metrics = append(
-		metrics,
-		plugin.Metric{
-			DeviceID:  deviceID,
-			Name:      "gpu_utilization",
-			Value:     float64(utilization.Gpu),
-			Unit:      "percent",
-			Timestamp: now,
-		},
-		plugin.Metric{
-			DeviceID:  deviceID,
-			Name:      "memory_utilization",
-			Value:     float64(utilization.Memory),
-			Unit:      "percent",
-			Timestamp: now,
-		},
-	)
-
-	memory, ret := device.GetMemoryInfo()
-	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf(
-			"get memory info for NVIDIA device %q: %s",
-			deviceID,
-			nvml.ErrorString(ret),
-		)
+func collectTemperature(
+	ctx context.Context,
+	device nvml.Device,
+	deviceID string,
+	timestamp time.Time,
+	metrics *[]plugin.Metric,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-
-	metrics = append(
-		metrics,
-		plugin.Metric{
-			DeviceID:  deviceID,
-			Name:      "memory_used",
-			Value:     memory.Used,
-			Unit:      "byte",
-			Timestamp: now,
-		},
-		plugin.Metric{
-			DeviceID:  deviceID,
-			Name:      "memory_total",
-			Value:     memory.Total,
-			Unit:      "byte",
-			Timestamp: now,
-		},
-	)
 
 	temperature, ret := device.GetTemperature(
 		nvml.TEMPERATURE_GPU,
 	)
-	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf(
+
+	switch ret {
+	case nvml.SUCCESS:
+		*metrics = append(
+			*metrics,
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "temperature",
+				Value:     float64(temperature),
+				Unit:      "celsius",
+				Timestamp: timestamp,
+			},
+		)
+
+		return nil
+
+	case nvml.ERROR_NOT_SUPPORTED:
+		return nil
+
+	default:
+		return fmt.Errorf(
 			"get temperature for NVIDIA device %q: %s",
 			deviceID,
 			nvml.ErrorString(ret),
 		)
 	}
+}
 
-	metrics = append(
-		metrics,
-		plugin.Metric{
-			DeviceID:  deviceID,
-			Name:      "temperature",
-			Value:     float64(temperature),
-			Unit:      "celsius",
-			Timestamp: now,
-		},
-	)
+func collectPower(
+	ctx context.Context,
+	device nvml.Device,
+	deviceID string,
+	timestamp time.Time,
+	metrics *[]plugin.Metric,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	powerMilliwatts, ret := device.GetPowerUsage()
-	if ret != nvml.SUCCESS {
-		return nil, fmt.Errorf(
+
+	switch ret {
+	case nvml.SUCCESS:
+		*metrics = append(
+			*metrics,
+			plugin.Metric{
+				DeviceID:  deviceID,
+				Name:      "power",
+				Value:     float64(powerMilliwatts) / 1000.0,
+				Unit:      "watt",
+				Timestamp: timestamp,
+			},
+		)
+
+		return nil
+
+	case nvml.ERROR_NOT_SUPPORTED:
+		return nil
+
+	default:
+		return fmt.Errorf(
 			"get power usage for NVIDIA device %q: %s",
 			deviceID,
 			nvml.ErrorString(ret),
 		)
 	}
-
-	metrics = append(
-		metrics,
-		plugin.Metric{
-			DeviceID: deviceID,
-			Name:     "power",
-			Value: float64(powerMilliwatts) /
-				1000.0,
-			Unit:      "watt",
-			Timestamp: now,
-		},
-	)
-
-	return metrics, nil
 }

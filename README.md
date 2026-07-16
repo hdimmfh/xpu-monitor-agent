@@ -1,54 +1,164 @@
-## Project Goal
+# XPUMON
 
-XPUMON is a vendor-neutral, plugin-based monitoring framework for heterogeneous AI accelerators.
+XPUMON is a vendor-neutral monitoring and profiling framework for heterogeneous AI infrastructure.
+
+It provides a common plugin interface for discovering devices, collecting telemetry, and profiling Python workloads while isolating vendor-specific implementations behind plugins.
+
+---
+
+## Features
+
+### Monitoring
+
+- Vendor-neutral plugin architecture
+- Host telemetry collection
+- NVIDIA GPU telemetry through NVML
+- Multi-device discovery
+- Unified device, capability, and metric models
+
+### Profiling
+
+- Python process discovery
+- Configurable process discovery and exclusion
+- `py-spy dump` support
+- `py-spy record` support
+- YAML-based profiling configuration
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart LR
+    Host["Host Plugin"]
+    NVIDIA["NVIDIA Plugin"]
+    Future["Future Plugins"]
 
-    SDK["Vendor SDKs"]
-    SDK --> NVIDIA["NVIDIA Plugin"]
-    SDK --> AMD["AMD Plugin"]
-    SDK --> INTEL["Intel Plugin"]
-
+    Host --> Core["XPUMON Core"]
     NVIDIA --> Core
-    AMD --> Core
-    INTEL --> Core
+    Future --> Core
 
-    Core["XPUMON Core"]
-
-    Core --> Metrics["Unified Metrics"]
-    Metrics --> Export["Prometheus / OTLP"]
+    Core --> Metrics["Metrics"]
+    Core --> Profiling["Profiling"]
 ```
 
-It provides a common abstraction layer for collecting and normalizing telemetry from GPUs, XPUs, NPUs, DPUs, FPGAs, and future AI ASICs without coupling the core framework to a specific hardware vendor.
+Every telemetry source implements the same plugin interface.
 
-XPUMON does not replace vendor management libraries such as NVIDIA NVML or AMD SMI. Instead, vendor-specific SDKs are isolated behind plugins that expose devices, capabilities, and metrics through a unified interface.
+```go
+type Plugin interface {
+    Name() string
+    Discover(ctx context.Context) ([]Device, error)
+    Capabilities(ctx context.Context, deviceID string) ([]Capability, error)
+    Collect(ctx context.Context, deviceID string) ([]Metric, error)
+}
+```
 
+---
 
-## Project Status
+## Repository Structure
 
-XPUMON is currently in the early implementation phase.
+```text
+.
+├── cmd/
+├── configs/
+├── docs/
+├── pkg/
+├── plugins/
+│   ├── host/
+│   └── nvidia/
+└── README.md
+```
 
-* [x] Define the vendor-neutral plugin interface
-* [x] Define shared device, capability, and metric models
-* [x] Implement a mock plugin for core testing
-* [x] Add the initial NVIDIA NVML plugin structure
-* [ ] Validate telemetry collection on NVIDIA hardware
-* [ ] Complete metric normalization
-* [ ] Add a Prometheus-compatible export path
-* [ ] Add additional vendor plugins
-* [ ] Add Kubernetes deployment support
+---
+
+## Quick Start
+
+Build XPUMON:
+
+```bash
+go build -o xpumon ./cmd/xpumon
+```
+
+Collect metrics:
+
+```bash
+./xpumon
+```
+
+Run Python stack snapshot (`dump` mode):
+
+```bash
+./xpumon profile --config ./configs/pyspy-dump.yaml
+```
+
+Run sampling profiler (`record` mode):
+
+```bash
+./xpumon profile --config ./configs/pyspy-record.yaml
+```
+
+Run tests:
+
+```bash
+go test ./...
+```
+
+---
+
+## Configuration
+
+XPUMON uses YAML configuration for process discovery and profiling.
+
+Example configurations are available in:
+
+- [`configs/pyspy-dump.yaml`](configs/pyspy-dump.yaml)
+- [`configs/pyspy-record.yaml`](configs/pyspy-record.yaml)
+
+Configuration supports:
+
+- Process discovery (`/proc`)
+- Process exclusion by PID, user, command, or executable
+- `py-spy` binary configuration
+- `dump` and `record` profiling modes
+- Native stack collection
+
+---
+
+## Roadmap
+
+### Implemented
+
+- Vendor-neutral plugin interface
+- Host plugin
+- NVIDIA NVML plugin
+- Multi-device discovery
+- Host and GPU telemetry collection
+- Python process discovery
+- Configurable process exclusion
+- `py-spy dump` integration
+- `py-spy record` integration
+- YAML-based configuration
+
+### Planned
+
+- Prometheus exporter
+- OpenTelemetry exporter
+- Kubernetes integration
+- Process-to-GPU correlation
+- Additional accelerator plugins
+
+---
 
 ## Documentation
 
-```text
-docs/
-├── 00-overview.md      # Project vision, goals, non-goals, design principles and high-level vendor-neutral architecture
-└── 01-plugin-api.md    # Plugin interface, plugin lifecycle, capabilities, collection workflow, and shared data models
-```
-* [00-overview.md](docs/00-overview.md)
-* [01-plugin-api.md](docs/01-plugin-api.md)
+- [Project Overview](docs/00-overview.md)
+- [Plugin API](docs/01-plugin-api.md)
+- [Profiling](docs/02-profiling.md)
+
+More documentation will be added as the project evolves.
+
+---
 
 ## License
 
-XPUMON is licensed under the [Apache License 2.0](LICENSE).
+Licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
