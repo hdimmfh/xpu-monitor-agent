@@ -19,22 +19,17 @@ type Config struct {
 	BinaryPath string
 }
 
-// Profiler implements the common profiler interface
-// using py-spy.
+// Profiler implements the common profiler interface using py-spy.
 type Profiler struct {
 	binaryPath string
 }
 
 // New creates a py-spy profiler.
 //
-// When BinaryPath is empty, py-spy is resolved
-// from PATH.
+// When BinaryPath is empty, py-spy is resolved from PATH.
 func New(
 	cfg Config,
-) (
-	*Profiler,
-	error,
-) {
+) (*Profiler, error) {
 	binaryPath := strings.TrimSpace(
 		cfg.BinaryPath,
 	)
@@ -53,8 +48,7 @@ func (p *Profiler) Name() string {
 	return "py-spy"
 }
 
-// Available verifies that the py-spy binary
-// can be found and executed.
+// Available verifies that the py-spy binary can be found and executed.
 func (p *Profiler) Available(
 	ctx context.Context,
 ) error {
@@ -94,15 +88,8 @@ func (p *Profiler) Available(
 	return nil
 }
 
-// Profile executes either:
-//
-//	py-spy dump
-//
-// or:
-//
-//	py-spy record
-//
-// according to request.Mode.
+// Profile executes either py-spy dump or py-spy record according to
+// request.Mode.
 func (p *Profiler) Profile(
 	ctx context.Context,
 	request coreprofiler.Request,
@@ -126,9 +113,7 @@ func (p *Profiler) Profile(
 		}
 	}()
 
-	if err := validateRequest(
-		request,
-	); err != nil {
+	if err := validateRequest(request); err != nil {
 		return result, err
 	}
 
@@ -147,13 +132,9 @@ func (p *Profiler) Profile(
 		args...,
 	)
 
-	// stdout:
-	//   dump output or record payload
-	//
-	// stderr:
-	//   py-spy diagnostic/progress messages
+	// stdout contains the dump output or record payload.
+	// stderr contains py-spy diagnostic and progress messages.
 	var stderr bytes.Buffer
-
 	cmd.Stderr = &stderr
 
 	output, err := cmd.Output()
@@ -196,7 +177,27 @@ func (p *Profiler) Profile(
 		)
 	}
 
-	result.Data = output
+	data, err := parseProfileData(
+		request,
+		output,
+	)
+	if err != nil {
+		return result, fmt.Errorf(
+			"parse py-spy %s output: %w",
+			request.Mode,
+			err,
+		)
+	}
+
+	// RawData preserves the original py-spy stdout for debugging.
+	// It must not be emitted in the normal JSON response.
+	result.RawData = append(
+		[]byte(nil),
+		output...,
+	)
+
+	// Data contains valid JSON.
+	result.Data = data
 
 	return result, nil
 }
@@ -247,7 +248,6 @@ func validateRecordRequest(
 		"flamegraph",
 		"speedscope",
 		"chrometrace":
-
 		return nil
 
 	default:
@@ -260,10 +260,7 @@ func validateRecordRequest(
 
 func buildArgs(
 	request coreprofiler.Request,
-) (
-	[]string,
-	error,
-) {
+) ([]string, error) {
 	switch request.Mode {
 	case coreprofiler.ModeDump:
 		return buildDumpArgs(
