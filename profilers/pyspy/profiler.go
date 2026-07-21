@@ -3,6 +3,7 @@ package pyspy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	coreprofiler "github.com/hdimmfh/xpu-monitor-agent/pkg/profiler"
+	coresource "github.com/hdimmfh/xpu-monitor-agent/pkg/source"
 )
 
 // Config contains settings required to execute py-spy.
@@ -21,7 +23,8 @@ type Config struct {
 
 // Profiler implements the common profiler interface using py-spy.
 type Profiler struct {
-	binaryPath string
+	binaryPath     string
+	sourceResolver coresource.Resolver
 }
 
 // New creates a py-spy profiler.
@@ -33,13 +36,13 @@ func New(
 	binaryPath := strings.TrimSpace(
 		cfg.BinaryPath,
 	)
-
 	if binaryPath == "" {
 		binaryPath = "py-spy"
 	}
 
 	return &Profiler{
-		binaryPath: binaryPath,
+		binaryPath:     binaryPath,
+		sourceResolver: coresource.NewLinuxResolver(),
 	}, nil
 }
 
@@ -164,7 +167,6 @@ func (p *Profiler) Profile(
 		errorOutput := strings.TrimSpace(
 			stderr.String(),
 		)
-
 		if errorOutput == "" {
 			errorOutput = err.Error()
 		}
@@ -177,7 +179,8 @@ func (p *Profiler) Profile(
 		)
 	}
 
-	data, err := parseProfileData(
+	data, err := p.parseAndEnrichProfileData(
+		ctx,
 		request,
 		output,
 	)
@@ -200,6 +203,56 @@ func (p *Profiler) Profile(
 	result.Data = data
 
 	return result, nil
+}
+
+// parseAndEnrichProfileData converts py-spy output into JSON.
+//
+// Dump mode is parsed as DumpResult and enriched with source code from the
+// target process filesystem. Record mode keeps the existing parser behavior.
+func (p *Profiler) parseAndEnrichProfileData(
+	ctx context.Context,
+	request coreprofiler.Request,
+	output []byte,
+) ([]byte, error) {
+	if request.Mode != coreprofiler.ModeDump {
+		return parseProfileData(
+			request,
+			output,
+		)
+	}
+
+	dump, err := parseDump(output)
+	if err != nil {
+		return nil, err
+	}
+
+	// Source resolution is best-effort. Individual files that cannot be
+	// resolved do not invalidate the py-spy profile. EnrichSources only
+	// returns an error for invalid arguments or context cancellation.
+	if p.sourceResolver != nil {
+		_, err = EnrichSources(
+			ctx,
+			p.sourceResolver,
+			request.Target.PID,
+			&dump,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"enrich py-spy dump sources: %w",
+				err,
+			)
+		}
+	}
+
+	data, err := json.Marshal(dump)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"marshal enriched py-spy dump: %w",
+			err,
+		)
+	}
+
+	return data, nil
 }
 
 func validateRequest(
@@ -310,7 +363,6 @@ func buildRecordArgs(
 			request.Duration.Seconds(),
 		),
 	)
-
 	if durationSeconds < 1 {
 		durationSeconds = 1
 	}

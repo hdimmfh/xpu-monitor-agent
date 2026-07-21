@@ -83,7 +83,7 @@ func (p *Plugin) Collect(ctx context.Context, deviceID string) ([]plugin.Metric,
 		{
 			DeviceID:  deviceID,
 			Name:      "memory_used",
-			Value:     uint64(4 * 1024 * 1024 * 1024),
+			Value:     float64(4 * 1024 * 1024 * 1024),
 			Unit:      "byte",
 			Timestamp: now,
 		},
