@@ -49,6 +49,19 @@ type DumpFrame struct {
 	File     string `json:"file,omitempty"`
 	Line     int    `json:"line,omitempty"`
 
+	// SourcePath is the resolved absolute source path from the target
+	// process filesystem.
+	//
+	// This field is populated after parsing by the source enrichment
+	// stage. The parser itself does not access the filesystem.
+	SourcePath string `json:"source_path,omitempty"`
+
+	// SourceText contains the source code corresponding to Line.
+	//
+	// This field is populated after parsing by the source enrichment
+	// stage.
+	SourceText string `json:"source_text,omitempty"`
+
 	// Raw contains the original frame when it could not be separated
 	// into a function and source location.
 	Raw string `json:"raw,omitempty"`
@@ -129,7 +142,7 @@ func parseProfileData(
 
 // parseDump parses the text produced by:
 //
-//	py-spy dump --pid <pid>
+//	py-spy dump --pid <PID>
 func parseDump(
 	output []byte,
 ) (DumpResult, error) {
@@ -186,6 +199,7 @@ func parseDump(
 			)
 
 			currentThread = -1
+
 			continue
 		}
 
@@ -276,8 +290,12 @@ func parseDumpFrame(
 	)
 
 	if openIndex <= 0 ||
-		!strings.HasSuffix(line, ")") {
+		!strings.HasSuffix(
+			line,
+			")",
+		) {
 		frame.Raw = line
+
 		return frame
 	}
 
@@ -301,6 +319,7 @@ func parseDumpFrame(
 
 	if colonIndex <= 0 {
 		frame.File = location
+
 		return frame
 	}
 
@@ -309,6 +328,7 @@ func parseDumpFrame(
 	)
 	if err != nil {
 		frame.File = location
+
 		return frame
 	}
 

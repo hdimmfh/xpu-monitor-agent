@@ -1,0 +1,10 @@
+<module> (torch_test.py:22);synchronize (torch/cuda/__init__.py:1219) 50
+<module> (torch_test.py:24);synchronize (torch/cuda/__init__.py:1219) 44
+<module> (torch_test.py:21) 1
+<module> (torch_test.py:28);synchronize (torch/cuda/__init__.py:1218);__init__ (torch/cuda/__init__.py:651);_get_device_index (torch/cuda/_utils.py:583);is_scripting (torch/_jit_internal.py:104) 1
+<module> (torch_test.py:26);synchronize (torch/cuda/__init__.py:1217);_lazy_init (torch/cuda/__init__.py:503);is_initialized (torch/cuda/__init__.py:454) 1
+<module> (torch_test.py:26);synchronize (torch/cuda/__init__.py:1219) 46
+<module> (torch_test.py:27) 1
+<module> (torch_test.py:28);synchronize (torch/cuda/__init__.py:1219) 52
+<module> (torch_test.py:24);synchronize (torch/cuda/__init__.py:1218);__exit__ (torch/cuda/__init__.py:658) 2
+<module> (torch_test.py:24);synchronize (torch/cuda/__init__.py:1217);_lazy_init (torch/cuda/__init__.py:503);is_initialized (torch/cuda/__init__.py:454) 1

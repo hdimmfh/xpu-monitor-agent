@@ -53,6 +53,11 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	switch args[0] {
+	case "serve":
+		return runServe(
+			ctx,
+			args[1:],
+		)
 	case "collect":
 		return runCollect(ctx)
 	case "profile":
