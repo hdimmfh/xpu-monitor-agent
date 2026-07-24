@@ -44,66 +44,59 @@ It provides a common plugin interface for discovering accelerator devices, colle
 <table>
   <tr>
     <td align="center" width="50%">
-      <strong>py-spy Record Profile</strong>
-    </td>
-    <td align="center" width="50%">
-      <strong>py-spy Dump Profile</strong>
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
+      <strong>py-spy Record Profile</strong><br><br>
       <img
         src="https://github.com/hdimmfh/xpu-monitor-agent/blob/feat/core-interface/docs/images/01_pyspy_record_profile_output.png?raw=true"
         alt="py-spy record profile output"
-        width="100%"
-      />
+        width="460"
+      /><br><br>
+      <sub>
+        Sampling profile collected through <code>py-spy record</code>
+        and emitted as a raw profile record.
+      </sub>
     </td>
-    <td valign="top">
+    <td align="center" width="50%">
+      <strong>py-spy Dump Profile</strong><br><br>
       <img
         src="https://github.com/hdimmfh/xpu-monitor-agent/blob/feat/core-interface/docs/images/02_pyspy_dump_profile_output.png?raw=true"
         alt="py-spy dump profile output"
-        width="100%"
-      />
+        width="460"
+      /><br><br>
+      <sub>
+        Python thread and frame data collected through
+        <code>py-spy dump</code> and emitted as structured JSON.
+      </sub>
     </td>
   </tr>
-  <tr>
-    <td>
-      Sampling profile collected through <code>py-spy record</code> and emitted as a raw profile record.
-    </td>
-    <td>
-      Python thread and frame data collected through <code>py-spy dump</code> and emitted as structured JSON.
-    </td>
-  </tr>
+</table>
+
+<br>
+
+<table>
   <tr>
     <td align="center" width="50%">
-      <strong>Metrics JSON Output</strong>
-    </td>
-    <td align="center" width="50%">
-      <strong>Prometheus Exporter</strong>
-    </td>
-  </tr>
-  <tr>
-    <td valign="top">
+      <strong>Metrics JSON Output</strong><br><br>
       <img
         src="https://github.com/hdimmfh/xpu-monitor-agent/blob/feat/core-interface/docs/images/03_metrics_json_output.png?raw=true"
         alt="XPUMON metrics JSON output"
-        width="100%"
-      />
+        width="460"
+      /><br><br>
+      <sub>
+        Unified host and accelerator metrics represented through
+        the common XPUMON metric model.
+      </sub>
     </td>
-    <td valign="top">
+    <td align="center" width="50%">
+      <strong>Prometheus Exporter</strong><br><br>
       <img
         src="https://github.com/hdimmfh/xpu-monitor-agent/blob/feat/core-interface/docs/images/04_prometheus_exporter_metrics.png?raw=true"
         alt="XPUMON Prometheus exporter output"
-        width="100%"
-      />
-    </td>
-  </tr>
-  <tr>
-    <td>
-      Unified host and accelerator metrics represented through the common XPUMON metric model.
-    </td>
-    <td>
-      Device metrics exposed in Prometheus exposition format through the <code>/metrics</code> endpoint.
+        width="460"
+      /><br><br>
+      <sub>
+        Device metrics exposed in Prometheus exposition format
+        through the <code>/metrics</code> endpoint.
+      </sub>
     </td>
   </tr>
 </table>
